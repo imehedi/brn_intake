@@ -8,7 +8,7 @@
     "default_model": "gemma3:27b",
     "num_ctx": 32768,
     "temperature": 0.2,
-    "keep_alive": "15m"
+    "keep_alive": "5m"
   },
   "cloud": {
     "default_provider": "anthropic",

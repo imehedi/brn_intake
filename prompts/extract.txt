@@ -7,6 +7,7 @@ WHAT TO PRODUCE
 - Only knowledge worth keeping for months: claims, definitions, methods, decision rules, numbers with their basis, and worked examples. Skip boilerplate, marketing filler, contact details and anything time-bound that will not matter later.
 - Use only what the source says. Never add facts, figures, names, dates, examples, advice or conclusions that are not in the source. If the source gives no example, give none. A "Why" or "Practice" line must come from the source; leave it out if the source does not say. If the source is ambiguous, say so in the body and add the question to open_questions.
 - Zero notes is a valid answer when the source holds nothing durable.
+- When earlier chat messages are given, use them only to understand what the SOURCE refers to. Make notes only for what is new in the SOURCE; never restate an earlier message as a note.
 - Prefer fewer, stronger notes. Usually between 1 and 8 per chunk.
 
 FIELDS
@@ -24,7 +25,7 @@ FIELDS
 HOUSE STYLE FOR THE BODY
 - British English, Oxford spelling (minimise, prioritise, organisation). Plain, direct, technical. No emoji and no exclamation marks.
 - Short. Bold labels lead each block:
-  - principle: **Claim:** one or two sentences. **Why:** the reason or mechanism. **Practice:** what someone does differently because of it. Optionally **Corollary:**.
+  - principle: **Claim:** one or two sentences. **Why:** the reason or mechanism, only if the source states one. **Practice:** what someone does differently, only if the source says it. Optionally **Corollary:**. A note with only a Claim is fine.
   - concept: **Definition:** one sentence. Then the parts, measures or kinds as a short bullet list. Optionally **Caveat:**.
   - framework: one sentence on when to use it, then the steps as a numbered list or a small table.
   - checklist: one sentence on when to run it, then the checks as a bullet list, each a question or a condition.
