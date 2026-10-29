@@ -52,7 +52,9 @@ signing_key() {
     ssh-keygen -q -t ed25519 -N '' -C "Brain Intake commit signing ($(hostname -s))" -f "$k" || die "could not create the signing key"
     echo "Created Brain Intake's commit-signing key: $k.pub"
   fi
-  printf 'brain-intake@localhost namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$k.pub")" > "$STATE/signing/allowed_signers"
+  # Keys are added, never replaced, so commits signed by an earlier key keep verifying.
+  line=$(printf 'brain-intake@localhost namespaces="git" %s' "$(cut -d' ' -f1,2 "$k.pub")")
+  grep -qxF "$line" "$STATE/signing/allowed_signers" 2>/dev/null || printf '%s\n' "$line" >> "$STATE/signing/allowed_signers"
   # Let the Mac's git verify these signatures too. This touches only the vault's own .git/config.
   want="$STATE/signing/allowed_signers"
   [ "$(git -C "$VAULT" config --local --get gpg.ssh.allowedSignersFile 2>/dev/null || true)" = "$want" ] ||
