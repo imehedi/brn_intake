@@ -80,7 +80,7 @@ SCHEMA = {
                 'summary': {'type': 'string'}, 'body': {'type': 'string'},
                 'tags': {'type': 'array', 'items': {'type': 'string'}},
                 'links': {'type': 'array', 'items': {'type': 'string'}},
-                'evidence': {'type': 'array', 'items': {
+                'evidence': {'type': 'array', 'minItems': 1, 'maxItems': 4, 'items': {
                     'type': 'object',
                     'properties': {'quote': {'type': 'string'}, 'where': {'type': 'string'}},
                     'required': ['quote', 'where']}},
@@ -514,7 +514,7 @@ def require_clean_index():
 
 def commit(paths, message):
     for p in paths:
-        r = git('add', '--', p)
+        r = git('add', '-A', '--', p)
         if r.returncode: raise Refused('git add failed: ' + r.stderr.strip())
     r = git('commit', '-q', '-m', message, timeout=180)
     if r.returncode:
@@ -720,7 +720,7 @@ def archive_inbox(payload):
                           '| Original path | Now at | SHA-256 (first 16) | Reason |\n|---|---|---|---|\n')
         brain.write_atomic(mf, head.rstrip('\n') + f'\n| `{rel}` | `{dest}` | `{h[:16]}` | discarded from the inbox in Brain Intake |\n')
         try:
-            sha = commit([dest, os.path.relpath(mf, VAULT)] + ([rel] if tracked else []), f'intake: archive inbox draft {name[:-3]}')
+            sha = commit([dest, os.path.relpath(mf, VAULT)], f'intake: archive inbox draft {name[:-3]}')   # git mv already staged the old path
         except Exception:
             git('reset', '-q', '--', dest, rel, os.path.relpath(mf, VAULT))
             os.replace(os.path.join(VAULT, dest), p)
@@ -878,7 +878,10 @@ def main():
     if host not in ('127.0.0.1', 'localhost'): sys.exit('Refusing to listen on anything but 127.0.0.1.')
     restore_jobs()
     threading.Thread(target=worker, daemon=True).start()
-    srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
+    try:
+        srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
+    except OSError as e:
+        sys.exit(f'Port {PORT} is in use ({e.strerror}). Brain Intake may already be running: open http://127.0.0.1:{PORT}/')
     print(f'Brain Intake on http://127.0.0.1:{PORT}  (vault: {VAULT}; cloud: {"allowed" if CFG.get("allow_cloud") else "locked"})', flush=True)
     if '--open' in sys.argv: subprocess.Popen(['/usr/bin/open', f'http://127.0.0.1:{PORT}/'])
     try: srv.serve_forever()
