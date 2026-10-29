@@ -8,18 +8,27 @@ against the source -> you review and edit -> saved to `00 Inbox/` with the sourc
 Data boundary: `allow_cloud` in config.json is false, so only the local Ollama model is used and no
 document text leaves the machine. Client material never goes to a cloud model, whatever the config.
 
-Listens on 127.0.0.1 only. Every API call needs the per-session token served in the page, a local
-Host header and, where the browser sends one, a same-origin Origin.
+Reachable on the Mac's 127.0.0.1 only: natively it listens there; in the container it listens on an
+internal network that only the relay can reach. Every API call needs the access key (kept in the state
+folder and handed to the browser in the URL fragment by bin/brain-intake open, never served by the
+server), a local Host header and, where the browser sends one, a same-origin Origin.
 """
 import datetime as dt, hashlib, hmac, html.parser, http.client, json, os, queue, re, secrets, select, shutil, socket, subprocess
-import sys, threading, time, traceback, unicodedata, uuid
+import signal, sys, threading, time, traceback, unicodedata, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import requests
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VAULT = os.path.abspath(os.path.join(HERE, '..', '..'))
+# The vault is data; this app is machinery that runs beside it (natively or in a container).
+IN_CONTAINER = os.environ.get('BRAIN_IN_CONTAINER') == '1'
+VAULT = os.path.abspath(os.environ.get('BRAIN_VAULT') or '/opt/brain')
+VAULT_NAME = os.environ.get('BRAIN_VAULT_NAME') or os.path.basename(VAULT)       # for obsidian:// links
+VAULT_SHOWN = os.environ.get('BRAIN_VAULT_HOST_PATH') or VAULT                   # the path as you know it on the Mac
+if not os.path.isfile(os.path.join(VAULT, '_system', 'scripts', 'brain.py')):
+    sys.exit(f'No vault at {VAULT}: _system/scripts/brain.py is missing. Set BRAIN_VAULT.')
+# The commit gate's own code, loaded from the vault, so this app and your git commits apply the same rules.
 sys.path.insert(0, os.path.join(VAULT, '_system', 'scripts'))
 os.environ.pop('BRAIN_ROOT', None); os.environ.pop('BRAIN_REAL_ROOT', None)
 import brain  # noqa: E402  (vault frontmatter helpers and lint)
@@ -27,13 +36,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rag  # noqa: E402  (local retrieval for the Ask tab)
 
 CFG = json.load(open(os.path.join(HERE, 'config.json'), encoding='utf-8'))
+if IN_CONTAINER and os.environ.get('OLLAMA_URL'):
+    CFG['local']['url'] = os.environ['OLLAMA_URL']       # the relay to Ollama on the Mac; checked in main()
 PROMPT = open(os.path.join(HERE, 'prompts', 'extract.txt'), encoding='utf-8').read()
-WORK = os.path.join(HERE, '.work')
+WORK = os.path.abspath(os.environ.get('BRAIN_STATE') or os.path.join(HERE, '..', 'state'))   # jobs, chats, vectors
 INBOX = os.path.join(VAULT, '00 Inbox')
 SOURCES = '_sources'
-TOKEN = secrets.token_urlsafe(32)
-PORT = int(CFG.get('port', 8765))
-HOSTS = {f'127.0.0.1:{PORT}', f'localhost:{PORT}'}
+def load_key():
+    """The access key: random, stored in the state folder (0600), never sent by the server.
+    Anything that can fetch the page (another container, another local process) still cannot call the API."""
+    os.makedirs(WORK, exist_ok=True)
+    p = os.path.join(WORK, 'access.key')
+    try:
+        k = open(p, encoding='ascii').read().strip()
+        if re.fullmatch(r'[A-Za-z0-9_-]{40,}', k): return k
+    except (OSError, UnicodeDecodeError):
+        pass
+    k = secrets.token_urlsafe(32)
+    fd = os.open(p + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f: f.write(k + '\n')
+    os.replace(p + '.tmp', p)
+    return k
+
+
+TOKEN = load_key()
+PORT = int(CFG.get('port', 8765))                                   # where the server listens
+PUBLIC_PORT = int(os.environ.get('BRAIN_PUBLIC_PORT') or PORT)       # where the browser reaches it on the Mac
+HOSTS = {f'{h}:{p}' for h in ('127.0.0.1', 'localhost') for p in {PORT, PUBLIC_PORT}}
 ORIGINS = {f'http://{h}' for h in HOSTS}
 LIMITS = CFG['limits']
 GIT_LOCK = threading.Lock()
@@ -129,7 +158,28 @@ def full_title(t, typ, domain):
 
 
 def git(*args, timeout=120):
-    return subprocess.run(['git', '-C', VAULT, *args], capture_output=True, text=True, timeout=timeout)
+    """git in the vault. A lock held briefly by the Mac's git or Obsidian is waited out, up to 10 s."""
+    for attempt in range(11):
+        r = subprocess.run(['git', '-C', VAULT, *args], capture_output=True, text=True, timeout=timeout)
+        if r.returncode == 0 or 'index.lock' not in (r.stderr or '') or attempt == 10: return r
+        time.sleep(1)
+
+
+VAULT_BROKEN = []      # set when a rollback could not be completed; writes stop until someone looks
+
+
+def undo(*args):
+    """A rollback step. If it fails, record it, so no further write is built on a half-undone index."""
+    r = git(*args)
+    if r.returncode:
+        VAULT_BROKEN.append(f'git {" ".join(args[:2])} failed during a rollback: {(r.stderr or r.stdout).strip()[:200]}')
+        print('ROLLBACK FAILED:', VAULT_BROKEN[-1], flush=True)
+    return r
+
+
+def index_lock_age():
+    try: return time.time() - os.stat(os.path.join(VAULT, '.git', 'index.lock')).st_mtime
+    except OSError: return None
 
 
 def yq(v): return json.dumps(v, ensure_ascii=False)
@@ -208,14 +258,92 @@ def extract_text(path, name):
         p = _HTMLText(); p.feed(open(path, encoding='utf-8', errors='replace').read())
         return re.sub(r'\n\s*\n+', '\n\n', ''.join(p.parts))
     if ext in ('.doc', '.rtf', '.odt', '.webarchive'):
-        r = subprocess.run(['/usr/bin/textutil', '-convert', 'txt', '-stdout', path],
-                           capture_output=True, text=True, timeout=120)
-        if r.returncode: raise Refused('textutil could not read this file.')
-        return r.stdout
+        if os.path.exists('/usr/bin/textutil'):                       # macOS, when run natively
+            r = subprocess.run(['/usr/bin/textutil', '-convert', 'txt', '-stdout', path],
+                               capture_output=True, text=True, timeout=120)
+            if r.returncode: raise Refused('textutil could not read this file.')
+            return r.stdout
+        return extract_portable(path, ext)
     if ext in ('.md', '.markdown', '.txt', '.csv', '.json', '.yaml', '.yml', '.log', ''):
         return open(path, encoding='utf-8', errors='replace').read()
     raise Refused(f'Unsupported file type: {ext or "none"}. Supported: PDF, DOCX, PPTX, XLSX, HTML, '
                   'DOC, RTF, ODT, Markdown, text, CSV and JSON.')
+
+
+def extract_portable(path, ext):
+    """Readers for the formats macOS textutil handles, using the standard library (plus antiword for .doc)."""
+    if ext == '.odt':
+        import zipfile, xml.etree.ElementTree as ET
+        with zipfile.ZipFile(path) as z: root = ET.fromstring(z.read('content.xml'))
+        ns = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
+        return '\n'.join(''.join(el.itertext()) for el in root.iter() if el.tag in (ns + 'p', ns + 'h'))
+    if ext == '.webarchive':
+        import plistlib
+        with open(path, 'rb') as f: arc = plistlib.load(f)
+        res = arc.get('WebMainResource') if isinstance(arc, dict) else None
+        data = res.get('WebResourceData') if isinstance(res, dict) else None
+        if not isinstance(data, bytes): raise Refused('This web archive holds no page.')
+        enc = res.get('WebResourceTextEncodingName') if isinstance(res.get('WebResourceTextEncodingName'), str) else 'utf-8'
+        try: html_text = data.decode(enc, 'replace')
+        except LookupError: html_text = data.decode('utf-8', 'replace')
+        p = _HTMLText(); p.feed(html_text)
+        return re.sub(r'\n\s*\n+', '\n\n', ''.join(p.parts))
+    if ext == '.rtf':
+        return rtf_text(open(path, encoding='latin-1').read())
+    if ext == '.doc':
+        try: r = subprocess.run(['antiword', '-m', 'UTF-8.txt', '-w', '0', path], capture_output=True, timeout=120)
+        except FileNotFoundError: raise Refused('Old Word (.doc) files need antiword. Save it as .docx instead.')
+        if r.returncode: raise Refused('This .doc file could not be read. Save it as .docx instead.')
+        return r.stdout[:20 * 1048576].decode('utf-8', 'replace')
+    raise Refused('Unsupported file type.')
+
+
+def rtf_text(rtf):
+    """Plain text from RTF. Groups that hold no body text are skipped; escapes are decoded in the
+    document's code page; nesting deeper than 500 is refused (a file of braces would otherwise eat memory)."""
+    skip_dest = {'fonttbl', 'colortbl', 'stylesheet', 'info', 'pict', 'object', 'header', 'footer', 'headerl',
+                 'headerr', 'footerl', 'footerr', 'listtable', 'listoverridetable', 'revtbl', 'rsidtbl', 'generator',
+                 'xmlnstbl', 'themedata', 'colorschememapping', 'datastore', 'latentstyles', 'pgdsctbl', 'fldinst',
+                 'filetbl', 'mmathpr', 'wgrffmtfilter', 'nonshppict', 'shppict', 'bkmkstart', 'bkmkend'}
+    chars = {'par': '\n', 'line': '\n', 'row': '\n', 'sect': '\n\n', 'page': '\n\n', 'tab': '\t', 'cell': '\t',
+             'lquote': '\u2018', 'rquote': '\u2019', 'ldblquote': '\u201c', 'rdblquote': '\u201d',
+             'endash': '\u2013', 'emdash': '\u2014', 'bullet': '\u2022', 'enspace': ' ', 'emspace': ' ', 'qmspace': ' '}
+    m0 = re.search(r'\\ansicpg(\d{3,5})', rtf[:4000])
+    codepage = f'cp{m0.group(1)}' if m0 else 'cp1252'
+    try: ''.encode(codepage)
+    except LookupError: codepage = 'cp1252'
+    out, stack, ignore, uc, skip_n, pending = [], [], False, 1, 0, bytearray()
+
+    def flush():
+        if pending: out.append(pending.decode(codepage, 'replace')); pending.clear()
+    for m in re.finditer(r"\\([a-z]{1,32})(-?\d{1,10})? ?|\\'([0-9a-f]{2})|\\([^a-z])|([{}])|[\r\n]+|(.)", rtf, re.I | re.S):
+        word, arg, hexc, sym, brace, ch = m.groups()
+        if brace == '{':
+            if len(stack) >= 500: raise Refused('The RTF file nests too deeply to read safely.')
+            stack.append((ignore, uc)); continue
+        if brace == '}':
+            ignore, uc = stack.pop() if stack else (False, 1); continue
+        if skip_n and (ch or hexc): skip_n -= 1; continue
+        if ignore: continue
+        if hexc: pending.append(int(hexc, 16)); continue
+        flush()
+        if sym:
+            if sym == '*': ignore = True
+            elif sym in '\\{}': out.append(sym)
+            elif sym == '~': out.append('\u00a0')
+            elif sym == '_': out.append('\u2011')
+            continue
+        if word:
+            w = word.lower()
+            if w in skip_dest: ignore = True
+            elif w in chars: out.append(chars[w])
+            elif w == 'uc' and arg: uc = int(arg)
+            elif w == 'u' and arg:
+                n = int(arg); out.append(chr((n + 65536 if n < 0 else n) % 0x110000)); skip_n = uc
+            continue
+        if ch: out.append(ch)
+    flush()
+    return re.sub(r'\n{3,}', '\n\n', ''.join(out)).strip()
 
 
 ZIP_TYPES = {'.docx', '.pptx', '.xlsx', '.xlsm', '.odt'}
@@ -233,7 +361,7 @@ def zip_guard(path, name):
         raise Refused('The file is damaged or is not the type its name says.')
     total = sum(i.file_size for i in infos)
     packed = max(1, sum(i.compress_size for i in infos))
-    if len(infos) > 20000 or total > 512 * 1048576 or total / packed > 200:
+    if len(infos) > 20000 or total > 200 * 1048576 or total / packed > 200:
         raise Refused('The file expands to an unsafe size and was not opened.')
 
 
@@ -255,6 +383,9 @@ def extract_child(path, name, out):
     try:
         import resource
         resource.setrlimit(resource.RLIMIT_CPU, (EXTRACT_SECONDS, EXTRACT_SECONDS))
+        if sys.platform.startswith('linux'):                       # macOS does not enforce RLIMIT_AS
+            cap = 1536 * 1048576
+            resource.setrlimit(resource.RLIMIT_AS, (cap, cap))
     except Exception:
         pass
     try:
@@ -312,7 +443,7 @@ def boundary_check(job):
     if job['sensitivity'] == 'client':
         raise Refused('Client material is processed by the local model only.')
     if not CFG.get('allow_cloud'):
-        raise Refused('Cloud processing is locked: allow_cloud is false in _system/intake/config.json.')
+        raise Refused('Cloud processing is locked: allow_cloud is false in config.json.')
 
 
 def user_message(job, chunk, i, n, titles):
@@ -889,7 +1020,7 @@ def graph_data():
         dirty = git('status', '--porcelain', '--', '.').stdout.strip() != ''
     except Exception:
         stamp, dirty = '', False
-    return {'generated': now(), 'commit': stamp, 'vault_name': os.path.basename(VAULT),
+    return {'generated': now(), 'commit': stamp, 'vault_name': VAULT_NAME,
             'nodes': list(nodes.values()), 'edges': [{'source': a, 'target': b} for a, b in sorted(edges)],
             'groups': obsidian_groups(), 'dirty': dirty}
 
@@ -973,6 +1104,12 @@ GENERATED_FILES = ('_system/VAULT-INDEX.md', '_system/catalog.json')   # the gat
 
 
 def require_clean_index():
+    if VAULT_BROKEN:
+        raise Refused('A rollback did not complete, so writes are paused. Check `git -C /opt/brain status`, '
+                      'tidy it, then restart Brain Intake. ' + VAULT_BROKEN[-1])
+    age = index_lock_age()
+    if age is not None and age > 600:
+        raise Refused(f'.git/index.lock is {int(age // 60)} minutes old, so git is locked. If no git is running, delete it.')
     if git('diff', '--cached', '--quiet').returncode != 0:
         raise Refused('The vault has staged changes. Commit or unstage them first, so this commit holds only this change.')
 
@@ -1082,8 +1219,8 @@ def save_job(jid, payload):
             sha = commit([sdir] + [os.path.relpath(p, VAULT) for p in written],
                          f'intake: {len(chosen)} draft note(s) from {job["name"]} to inbox')
         except BaseException:
-            git('reset', '-q', '--', sdir, *[os.path.relpath(p, VAULT) for p in written], *GENERATED_FILES)
-            git('checkout', '--', *GENERATED_FILES)
+            undo('reset', '-q', '--', sdir, *[os.path.relpath(p, VAULT) for p in written], *GENERATED_FILES)
+            undo('checkout', '--', *GENERATED_FILES)
             for p in written:
                 if os.path.exists(p): os.remove(p)        # uncommitted files this request created
             shutil.rmtree(abs_sdir, ignore_errors=True)
@@ -1180,9 +1317,9 @@ def promote(payload):
             sha = commit([plan['target'], plan['hub']], f'promote: {title} to {os.path.dirname(plan["target"])}, linked from its hub')
         except BaseException:
             # Undo everything this request did: index, file location, file content, hub, generated index.
-            git('reset', '-q', '--', plan['target'], plan['hub'], rel, *GENERATED_FILES)
+            undo('reset', '-q', '--', plan['target'], plan['hub'], rel, *GENERATED_FILES)
             if os.path.exists(target): os.replace(target, p)
-            git('checkout', '--', rel, *GENERATED_FILES)
+            undo('checkout', '--', rel, *GENERATED_FILES)
             brain.write_atomic(hub, hub_before)
             raise
     return {'commit': sha, 'target': plan['target'], 'hub': plan['hub']}
@@ -1218,12 +1355,12 @@ def archive_inbox(payload):
         try:
             sha = commit([dest, os.path.relpath(mf, VAULT)], f'intake: archive inbox draft {name[:-3]}')   # git mv already staged the old path
         except BaseException:
-            git('reset', '-q', '--', dest, rel, mf_rel, *GENERATED_FILES)
-            git('checkout', '--', *GENERATED_FILES)
+            undo('reset', '-q', '--', dest, rel, mf_rel, *GENERATED_FILES)
+            undo('checkout', '--', *GENERATED_FILES)
             os.replace(os.path.join(VAULT, dest), p)
             if before is None: os.remove(mf)
             else: brain.write_atomic(mf, before)
-            if tracked: git('checkout', '--', rel)
+            if tracked: undo('checkout', '--', rel)
             raise
     return {'commit': sha, 'archived': dest}
 
@@ -1249,7 +1386,7 @@ def status():
                   'providers': {p: {'model': c[p]['model'], 'deep_model': c[p].get('deep_model', ''),
                                     'key': bool(keychain(c[p]['keychain_service'], c[p]['env'])) if CFG.get('allow_cloud') else None}
                                 for p in ('anthropic', 'openai')}},
-        'vault': {'path': VAULT, 'lint_errors': len(errs), 'lint_warnings': len(warns), 'inbox': len(list_inbox()),
+        'vault': {'path': VAULT_SHOWN, 'name': VAULT_NAME, 'lint_errors': len(errs), 'lint_warnings': len(warns), 'inbox': len(list_inbox()),
                   'staged_changes': git('diff', '--cached', '--quiet').returncode != 0},
         'domains': DOMAINS, 'types': EXTRACT_TYPES, 'sensitivities': SENSITIVITIES,
         'limits': {'max_upload_mb': LIMITS['max_upload_mb']}, 'rag': rag_status()}
@@ -1294,7 +1431,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(403, {'error': 'Cross-site request refused.'}); return False
         given = self.headers.get('X-Intake-Token', '').encode('utf-8', 'replace')
         if api and not hmac.compare_digest(given, TOKEN.encode()):
-            self._send(403, {'error': 'Missing or wrong session token. Reload the page.'}); return False
+            self._send(403, {'error': 'This page has no valid key. Open Brain Intake with: bin/brain-intake open'}); return False
         return True
 
     def _body(self, limit):
@@ -1411,7 +1548,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path in ('/', '/index.html'):
                 nonce = secrets.token_urlsafe(16)
                 page = open(os.path.join(STATIC, 'index.html'), encoding='utf-8').read()
-                page = page.replace('__INTAKE_TOKEN__', TOKEN).replace('__NONCE__', nonce)
+                page = page.replace('__NONCE__', nonce)
                 csp = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
                        "font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; "
                        "form-action 'none'; frame-ancestors 'none'")
@@ -1510,24 +1647,44 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    host = CFG.get('host', '127.0.0.1')
-    if host not in ('127.0.0.1', 'localhost'): sys.exit('Refusing to listen on anything but 127.0.0.1.')
-    if urlparse(CFG['local']['url']).hostname not in ('127.0.0.1', 'localhost', '::1'):
-        sys.exit('local.url in config.json must point at this Mac (127.0.0.1). Refusing to start.')
+    # Natively the server listens on loopback only. In the container it listens inside an internal network
+    # that has no route out; the relay publishes it on the Mac's 127.0.0.1 only.
+    listen = '0.0.0.0' if IN_CONTAINER else CFG.get('host', '127.0.0.1')
+    if listen not in ('127.0.0.1', 'localhost', '0.0.0.0') or (listen == '0.0.0.0' and not IN_CONTAINER):
+        sys.exit('Refusing to listen on anything but 127.0.0.1.')
+    ollama_ok = ('ollama.internal',) if IN_CONTAINER else ('127.0.0.1', 'localhost', '::1')
+    if urlparse(CFG['local']['url']).hostname not in ollama_ok:
+        sys.exit(f'The Ollama URL must be {" or ".join(ollama_ok)} (it is {CFG["local"]["url"]}). Refusing to start.')
     if git('diff', '--cached', '--quiet').returncode != 0:
         print('Note: the vault has staged changes, so saves and promotions will be refused until you commit or '
               'unstage them (git -C "%s" status).' % VAULT, flush=True)
     os.makedirs(WORK, exist_ok=True)
     os.chmod(WORK, 0o700)
+    age = index_lock_age()
+    if age is not None:
+        print(f'Note: .git/index.lock exists ({int(age)} s old). If no git is running on the Mac, it is stale: '
+              f'saves stay paused until it is removed.', flush=True)
+
+    def stop(signum, frame):
+        # docker stop, restart or a reboot: let a commit or its rollback finish before exiting.
+        print('Stopping: waiting for any commit in progress...', flush=True)
+        if GIT_LOCK.acquire(timeout=50): print('Stopped cleanly.', flush=True)
+        else: print('Stopped while a commit was still running; check the vault with git status.', flush=True)
+        os._exit(0)
+    signal.signal(signal.SIGTERM, stop)
     restore_jobs()
     threading.Thread(target=worker, daemon=True).start()
     threading.Thread(target=rag_maintainer, daemon=True).start()
     try:
-        srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
+        srv = ThreadingHTTPServer((listen, PORT), Handler)
     except OSError as e:
         sys.exit(f'Port {PORT} is in use ({e.strerror}). Brain Intake may already be running: open http://127.0.0.1:{PORT}/')
-    print(f'Brain Intake on http://127.0.0.1:{PORT}  (vault: {VAULT}; cloud: {"allowed" if CFG.get("allow_cloud") else "locked"})', flush=True)
-    if '--open' in sys.argv: subprocess.Popen(['/usr/bin/open', f'http://127.0.0.1:{PORT}/'])
+    print(f'Brain Intake on http://127.0.0.1:{PUBLIC_PORT}  (vault: {VAULT_SHOWN}; state: {WORK}; '
+          f'{"container" if IN_CONTAINER else "native"}; cloud: {"allowed" if CFG.get("allow_cloud") else "locked"})', flush=True)
+    if not IN_CONTAINER:
+        print(f'Open: http://127.0.0.1:{PUBLIC_PORT}/#k={TOKEN}  (the key stays in this browser after the first visit)', flush=True)
+        if '--open' in sys.argv and os.path.exists('/usr/bin/open'):
+            subprocess.Popen(['/usr/bin/open', f'http://127.0.0.1:{PUBLIC_PORT}/#k={TOKEN}'])
     try: srv.serve_forever()
     except KeyboardInterrupt: pass
 

@@ -1,0 +1,105 @@
+# Brain Intake in Docker. Start it with bin/brain-intake up, which fills in the values below from the Mac.
+#
+#   browser on the Mac --127.0.0.1:8765--> relay --internal network--> app --/vault--> /opt/brain (bind)
+#                                           relay <--ollama.internal--- app (tags, chat, embed only)
+#                                           relay --> host.docker.internal:11434 (Ollama on the Mac)
+#
+# The app is on an internal network with no route out, so it cannot reach the internet even if its
+# config said otherwise. The relay is the only way in or out, and it serves two fixed routes.
+name: brain-intake
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  init: true
+
+services:
+  app:
+    <<: *hardened
+    build:
+      context: .
+      args:
+        BRAIN_UID: ${BRAIN_UID:-501}
+        BRAIN_GID: ${BRAIN_GID:-20}
+    image: brain-intake:${BRAIN_PROJECT:-brain-intake}
+    user: "${BRAIN_UID:?run bin/brain-intake up}:${BRAIN_GID:?run bin/brain-intake up}"
+    stop_grace_period: 60s                   # a commit or its rollback finishes before the container stops
+    environment:
+      BRAIN_VAULT_HOST_PATH: ${BRAIN_VAULT_HOST:?run bin/brain-intake up}
+      BRAIN_VAULT_NAME: ${BRAIN_VAULT_NAME:-brain}
+      BRAIN_PUBLIC_PORT: ${BRAIN_PORT:-8765}
+      TZ: ${BRAIN_TZ:-Europe/London}
+      TMPDIR: /state/tmp                     # on the Mac's disk, not in the container's memory
+      # You author the notes; Brain Intake commits them and signs with its own key (never yours).
+      GIT_AUTHOR_NAME: ${BRAIN_GIT_NAME:?run bin/brain-intake up}
+      GIT_AUTHOR_EMAIL: ${BRAIN_GIT_EMAIL:?run bin/brain-intake up}
+      GIT_COMMITTER_NAME: Brain Intake
+      GIT_COMMITTER_EMAIL: brain-intake@localhost
+      # git settings for the container only. Environment settings outrank the vault's .git/config.
+      GIT_CONFIG_COUNT: "10"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: /vault
+      GIT_CONFIG_KEY_1: core.hooksPath            # the vault's gate always runs, whatever .git/config says
+      GIT_CONFIG_VALUE_1: _system/hooks
+      GIT_CONFIG_KEY_2: core.autocrlf             # same as on the Mac
+      GIT_CONFIG_VALUE_2: ${BRAIN_GIT_AUTOCRLF:-false}
+      GIT_CONFIG_KEY_3: gc.auto                   # no background gc that a stop could cut short
+      GIT_CONFIG_VALUE_3: "0"
+      GIT_CONFIG_KEY_4: maintenance.auto
+      GIT_CONFIG_VALUE_4: "false"
+      GIT_CONFIG_KEY_5: commit.gpgsign
+      GIT_CONFIG_VALUE_5: "true"
+      GIT_CONFIG_KEY_6: gpg.format
+      GIT_CONFIG_VALUE_6: ssh
+      GIT_CONFIG_KEY_7: user.signingkey
+      GIT_CONFIG_VALUE_7: /state/signing/brain-intake
+      GIT_CONFIG_KEY_8: gpg.ssh.allowedSignersFile
+      GIT_CONFIG_VALUE_8: /state/signing/allowed_signers
+      GIT_CONFIG_KEY_9: core.fsmonitor
+      GIT_CONFIG_VALUE_9: "false"
+    volumes:
+      - {type: bind, source: "${BRAIN_VAULT_HOST}", target: /vault, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_STATE_HOST:?run bin/brain-intake up}", target: /state, bind: {create_host_path: false}}
+      # Read-only over the parts of the vault that run as code on the Mac, so a compromised file reader
+      # cannot plant a hook, change the gate, rewrite git's config or add an Obsidian plugin.
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/.git/config", target: /vault/.git/config, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/.git/hooks", target: /vault/.git/hooks, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/_system/hooks", target: /vault/_system/hooks, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/_system/scripts", target: /vault/_system/scripts, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/.obsidian", target: /vault/.obsidian, read_only: true, bind: {create_host_path: false}}
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m
+    networks: [inner]
+    mem_limit: 2g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import http.client as h; c=h.HTTPConnection('127.0.0.1',8765,timeout=3); c.request('GET','/',headers={'Host':'127.0.0.1:8765'}); assert c.getresponse().status==200"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  relay:
+    <<: *hardened
+    image: brain-intake:${BRAIN_PROJECT:-brain-intake}
+    command: ["python", "/relay/relay.py"]
+    user: "65534:65534"
+    ports:
+      - "127.0.0.1:${BRAIN_PORT:-8765}:8765"   # the Mac's loopback only, never the network
+    networks:
+      inner:
+        # Ollama accepts only local-looking Host names (localhost, *.internal), so the app calls it by this name.
+        aliases: [ollama.internal]
+      outer: {}
+    mem_limit: 128m
+    pids_limit: 32
+    depends_on:
+      app:
+        condition: service_started
+
+networks:
+  inner:
+    internal: true
+  outer: {}

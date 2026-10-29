@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="intake-token" content="__INTAKE_TOKEN__">
 <title>Brain Intake</title>
 <style nonce="__NONCE__">
 @font-face { font-family: "Ubuntu"; font-weight: 400; font-style: normal; font-display: swap; src: url("/fonts/ubuntu-latin-400-normal.woff2") format("woff2"); }
@@ -813,7 +812,15 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
 <script nonce="__NONCE__">
 (() => {
   'use strict';
-  const TOKEN = document.querySelector('meta[name="intake-token"]').content;
+  // The access key never comes from the server. bin/brain-intake open puts it in the URL fragment (which the
+  // browser does not send anywhere); the page keeps it in this browser and removes it from the address bar.
+  const TOKEN = (() => {
+    const NAME = 'brain-intake-key'; let k = '';
+    const m = location.hash.match(/(?:^#|&)k=([A-Za-z0-9_-]{40,})/);
+    if (m) { k = m[1]; try { localStorage.setItem(NAME, k); } catch (_) { /* storage blocked: this visit only */ } history.replaceState(null, '', location.pathname + location.search); }
+    if (!k) { try { k = localStorage.getItem(NAME) || ''; } catch (_) { k = ''; } }
+    return k;
+  })();
   const $ = (id) => document.getElementById(id);
   const SVGNS = 'http://www.w3.org/2000/svg';
   const ICONS = {
@@ -906,12 +913,20 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   let status = null;
   function chip(el, ic, text) { el.replaceChildren(icon(ic), text); }
   async function loadStatus() {
-    try { status = await api('/api/status'); } catch (e) { chip($('chipLocal'), 'danger', 'Server unreachable'); return; }
+    try { status = await api('/api/status'); } catch (e) {
+      const keyless = !TOKEN || /no valid key/.test(e.message || '');
+      chip($('chipLocal'), 'danger', keyless ? 'No access key' : 'Server unreachable');
+      if (keyless && !$('keyAlert')) {
+        const a = alertBox('danger', 'This page needs its access key.', 'Open Brain Intake from Terminal with: /opt/git/brain-intake/bin/brain-intake open. The key is then kept in this browser.');
+        a.id = 'keyAlert'; $('main').prepend(a);
+      }
+      return;
+    }
     const L = status.local;
     chip($('chipLocal'), L.up ? 'check' : 'danger', L.up ? 'Local model: ready' : 'Local model: Ollama not running');
     chip($('chipCloud'), 'lock', status.cloud.allowed ? 'Cloud: allowed for non-client material' : 'Cloud: locked');
     const v = status.vault;
-    if (v.lint_errors) chip($('chipVault'), 'danger', `Vault: ${v.lint_errors} lint errors`);
+    if (v.lint_errors) chip($('chipVault'), 'danger', `Vault: ${v.lint_errors} lint error${v.lint_errors === 1 ? '' : 's'}`);
     else if (v.staged_changes) chip($('chipVault'), 'warn', 'Vault: changes staged; commit them first');
     else chip($('chipVault'), 'check', 'Vault: lint clean');
     $('inboxCount').textContent = v.inbox ? String(v.inbox) : '';
@@ -1822,7 +1837,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     $('askAnswer').replaceChildren(h('p', { class: 'eyebrow', text: 'Answer' }), h('h2', { class: 'card__title', id: 'askAnswerTitle', text: 'Ask a question' }),
       h('p', { class: 'meta', text: 'Results appear as you type. Press Enter or Ask for an answer written from the matching notes, with each claim cited.' }));
   }
-  const vaultName = () => (status && status.vault && status.vault.path ? status.vault.path.split('/').filter(Boolean).pop() : 'brain');
+  const vaultName = () => (status && status.vault ? (status.vault.name || String(status.vault.path || '').split('/').filter(Boolean).pop() || 'brain') : 'brain');
   const obsidianLink = (path) => `obsidian://open?vault=${encodeURIComponent(vaultName())}&file=${encodeURIComponent(path.replace(/\.md$/, ''))}`;
   function marked(text, marks) {
     // The server names the exact words to highlight, so the page never guesses at its stemmer.

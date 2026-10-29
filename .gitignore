@@ -1,0 +1,7 @@
+# Jobs, chats and search vectors: personal working state, never committed
+state/
+__pycache__/
+*.pyc
+.DS_Store
+# Throwaway vault clone and state for test runs
+.test/

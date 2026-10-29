@@ -1,0 +1,126 @@
+#!/bin/sh
+# Brain Intake launcher: runs the machinery in Docker, against the vault on this Mac.
+#
+#   bin/brain-intake up [--open]   build (cached, fast) and start, then wait until the page answers
+#   bin/brain-intake open          open the page in the browser, with its access key
+#   bin/brain-intake down          stop and remove the containers (the vault and state are untouched)
+#   bin/brain-intake restart       restart both containers
+#   bin/brain-intake build         rebuild the image without starting it
+#   bin/brain-intake logs          follow the logs
+#   bin/brain-intake status        containers, health, page, clock and git lock
+#
+# Settings, all optional: BRAIN_VAULT_HOST (default /opt/brain), BRAIN_PORT (8765),
+# BRAIN_STATE_HOST (<repo>/state), BRAIN_PROJECT (brain-intake). A test run sets all four.
+set -eu
+
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+VAULT=${BRAIN_VAULT_HOST:-/opt/brain}
+PORT=${BRAIN_PORT:-8765}
+STATE=${BRAIN_STATE_HOST:-$REPO/state}
+PROJECT=${BRAIN_PROJECT:-brain-intake}
+CMD=${1:-up}
+
+die() { echo "brain-intake: $*" >&2; exit 1; }
+note() { echo "brain-intake: $*" >&2; }
+
+need_docker() {
+  docker info >/dev/null 2>&1 && return 0
+  echo "Starting Docker Desktop..."
+  open -g -a Docker || die "Docker Desktop is not installed."
+  i=0
+  until docker info >/dev/null 2>&1; do
+    i=$((i + 1)); [ "$i" -gt 90 ] && die "Docker did not start within three minutes."
+    sleep 2
+  done
+}
+
+# Values compose needs even to stop or show containers; checked properly only by prepare().
+base_env() {
+  case "$VAULT" in /*) ;; *) VAULT=$(cd "$VAULT" 2>/dev/null && pwd) || die "no folder at $VAULT" ;; esac
+  case "$STATE" in /*) ;; *) mkdir -p "$STATE"; STATE=$(cd "$STATE" && pwd) ;; esac
+  export BRAIN_VAULT_HOST="$VAULT" BRAIN_PORT="$PORT" BRAIN_STATE_HOST="$STATE" BRAIN_PROJECT="$PROJECT"
+  export BRAIN_UID="$(id -u)" BRAIN_GID="$(id -g)"
+  export BRAIN_GIT_NAME="${BRAIN_GIT_NAME:-unset}" BRAIN_GIT_EMAIL="${BRAIN_GIT_EMAIL:-unset}"
+}
+
+signing_key() {
+  # Brain Intake signs its commits with its own key, so your personal key never enters a container.
+  # Revoke it by deleting its line from allowed_signers; a new key is made on the next start.
+  k="$STATE/signing/brain-intake"
+  mkdir -p "$STATE/signing" && chmod 700 "$STATE/signing"
+  if [ ! -f "$k" ]; then
+    ssh-keygen -q -t ed25519 -N '' -C "Brain Intake commit signing ($(hostname -s))" -f "$k" || die "could not create the signing key"
+    echo "Created Brain Intake's commit-signing key: $k.pub"
+  fi
+  printf 'brain-intake@localhost namespaces="git" %s\n' "$(cut -d' ' -f1,2 "$k.pub")" > "$STATE/signing/allowed_signers"
+  # Let the Mac's git verify these signatures too. This touches only the vault's own .git/config.
+  want="$STATE/signing/allowed_signers"
+  [ "$(git -C "$VAULT" config --local --get gpg.ssh.allowedSignersFile 2>/dev/null || true)" = "$want" ] ||
+    git -C "$VAULT" config --local gpg.ssh.allowedSignersFile "$want"
+}
+
+prepare() {
+  base_env
+  [ -f "$VAULT/_system/scripts/brain.py" ] || die "no vault at $VAULT (_system/scripts/brain.py is missing)."
+  BRAIN_GIT_NAME=$(git -C "$VAULT" config user.name || true)
+  BRAIN_GIT_EMAIL=$(git -C "$VAULT" config user.email || true)
+  [ -n "$BRAIN_GIT_NAME" ] && [ -n "$BRAIN_GIT_EMAIL" ] || die "set git user.name and user.email first; commits need them."
+  BRAIN_GIT_AUTOCRLF=$(git -C "$VAULT" config --get core.autocrlf || echo false)
+  tz=$(readlink /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##')
+  if [ -z "$tz" ] || [ ! -f "/usr/share/zoneinfo/$tz" ]; then note "could not read the Mac's time zone; using Europe/London"; tz=Europe/London; fi
+  # Read-only overlays in compose.yaml need these to exist.
+  mkdir -p "$VAULT/.git/hooks" "$VAULT/.obsidian"
+  for p in .git/config _system/hooks _system/scripts; do [ -e "$VAULT/$p" ] || die "the vault has no $p"; done
+  mkdir -p "$STATE" "$STATE/tmp" && chmod 700 "$STATE"
+  find "$STATE/tmp" -mindepth 1 -maxdepth 1 -mmin +60 -exec rm -rf {} + 2>/dev/null || true   # left by a hard stop
+  signing_key
+  if [ -f "$VAULT/.git/index.lock" ]; then note "$VAULT/.git/index.lock exists. If no git is running, it is stale: remove it."; fi
+  if git -C "$VAULT" ls-files | LC_ALL=C grep -q '[^ -~]'; then
+    note "the vault has file names with accented letters; if git in the container reports them as missing, rename them in Finder."
+  fi
+  export BRAIN_GIT_NAME BRAIN_GIT_EMAIL BRAIN_GIT_AUTOCRLF BRAIN_TZ="$tz"
+  export BRAIN_VAULT_NAME="${BRAIN_VAULT_NAME:-$(basename "$VAULT")}"
+}
+
+compose() { docker compose --project-directory "$REPO" -f "$REPO/compose.yaml" -p "$PROJECT" "$@"; }
+page_up() { [ "$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)" = 200 ]; }
+port_owner() { lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR == 2 { print $1 }'; }
+
+open_page() {
+  i=0
+  until [ -s "$STATE/access.key" ]; do i=$((i + 1)); [ "$i" -gt 20 ] && die "no access key in $STATE yet; is Brain Intake running?"; sleep 0.5; done
+  open "http://127.0.0.1:$PORT/#k=$(tr -d '\n' < "$STATE/access.key")"
+}
+
+case "$CMD" in
+  up)
+    need_docker; prepare
+    owner=$(port_owner)
+    case "$owner" in
+      ''|com.docke*|vpnkit*|docker*) ;;
+      *) die "port $PORT is already used by '$owner' (the native server?). Stop it first." ;;
+    esac
+    compose up -d --build
+    i=0
+    until page_up; do
+      i=$((i + 1)); [ "$i" -gt 45 ] && { compose logs --tail=40; die "the page did not come up; logs are above."; }
+      sleep 1
+    done
+    echo "Brain Intake is up on http://127.0.0.1:$PORT  (vault: $VAULT; state: $STATE)"
+    if [ "${2:-}" = "--open" ]; then open_page; else echo "Open it with: $0 open"; fi
+    ;;
+  open)    base_env; page_up || die "Brain Intake is not answering on port $PORT; run: $0 up"; open_page ;;
+  down)    need_docker; base_env; compose down ;;
+  restart) need_docker; prepare; compose restart ;;
+  build)   need_docker; prepare; compose build ;;
+  logs)    need_docker; base_env; compose logs -f --tail=100 ;;
+  status)
+    need_docker; base_env; compose ps
+    if page_up; then echo "page: up on http://127.0.0.1:$PORT"; else echo "page: not answering on port $PORT"; fi
+    c=$(docker exec "$PROJECT-app-1" date +%s 2>/dev/null || true)
+    if [ -n "$c" ]; then d=$(( $(date +%s) - c )); [ "${d#-}" -gt 30 ] && note "the container's clock is ${d} s off the Mac's; restart Docker Desktop."; fi
+    [ -f "$VAULT/.git/index.lock" ] && note "$VAULT/.git/index.lock exists; saves wait while git is locked."
+    exit 0
+    ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac

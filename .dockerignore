@@ -1,0 +1,6 @@
+# Only app/, relay/ and requirements.txt go into the image.
+*
+!app/
+!relay/
+!requirements.txt
+**/__pycache__
