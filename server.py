@@ -11,7 +11,7 @@ document text leaves the machine. Client material never goes to a cloud model, w
 Listens on 127.0.0.1 only. Every API call needs the per-session token served in the page, a local
 Host header and, where the browser sends one, a same-origin Origin.
 """
-import datetime as dt, hashlib, hmac, html.parser, http.client, json, os, queue, re, secrets, shutil, socket, subprocess
+import datetime as dt, hashlib, hmac, html.parser, http.client, json, os, queue, re, secrets, select, shutil, socket, subprocess
 import sys, threading, time, traceback, unicodedata, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -23,6 +23,8 @@ VAULT = os.path.abspath(os.path.join(HERE, '..', '..'))
 sys.path.insert(0, os.path.join(VAULT, '_system', 'scripts'))
 os.environ.pop('BRAIN_ROOT', None); os.environ.pop('BRAIN_REAL_ROOT', None)
 import brain  # noqa: E402  (vault frontmatter helpers and lint)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import rag  # noqa: E402  (local retrieval for the Ask tab)
 
 CFG = json.load(open(os.path.join(HERE, 'config.json'), encoding='utf-8'))
 PROMPT = open(os.path.join(HERE, 'prompts', 'extract.txt'), encoding='utf-8').read()
@@ -902,6 +904,70 @@ def graph_note_detail(path):
     raise Refused('No such note.')
 
 
+# ------------------------------------------------------------------ ask (local RAG)
+RAG_CFG = {**CFG.get('rag', {}), 'url': CFG['local']['url']}
+RAG = rag.Index(brain, RAG_CFG, WORK, plain, lambda: ollama_models())
+ANSWER_LOCK = threading.Lock()
+
+
+def extraction_running():
+    """True while a local extraction holds the big model; the Mac should not load a second one beside it."""
+    with JOBS_LOCK:
+        return any(j.get('state') in ('extracting', 'generating') and j.get('provider', 'local') == 'local' for j in JOBS.values())
+
+
+def rag_maintainer():
+    """Keep the index current. State is compared, not inferred: links follow the index version, and any
+    chunk without a vector is embedded, whoever noticed the change first. A search that sees a change
+    wakes this thread, which waits a few seconds so a burst of saves is embedded once."""
+    period = max(30, int(RAG_CFG.get('reindex_seconds', 120)))
+    while True:
+        try:
+            RAG.refresh()
+            if RAG.needs_links():
+                v = RAG.version
+                RAG.set_links(graph_data()['edges'], v)
+            if extraction_running():
+                RAG.embedding['state'] = 'waiting'                       # embedding resumes once the extraction ends
+            elif RAG.missing_vectors() or RAG.embedding['state'] in ('idle', 'missing', 'down', 'error', 'waiting'):
+                RAG.update_vectors()
+        except Exception:
+            traceback.print_exc()
+        if RAG.wake.wait(period): time.sleep(5)
+        RAG.wake.clear()
+
+
+def answer_model():
+    want = RAG_CFG.get('answer_model', 'gemma3:4b')
+    for m in ollama_models() or []:
+        if m == want or (':' not in want and m.split(':')[0] == want): return m
+    return None
+
+
+def ask_flags(src):
+    def flag(k):
+        v = src.get(k, False)
+        if isinstance(v, str):
+            if v.lower() not in ('0', '1', 'true', 'false', 'yes', 'no', ''): raise Refused(f'{k} must be true or false.')
+            v = v.lower() in ('1', 'true', 'yes')
+        if not isinstance(v, bool): raise Refused(f'{k} must be true or false.')
+        return v
+    q = src.get('q', '')
+    if not isinstance(q, str): raise Refused('q must be text.')
+    q = re.sub(r'\s+', ' ', plain(q)).strip()[:500]
+    return q, flag('client'), flag('inbox')
+
+
+def rag_status():
+    snap = RAG.snap
+    up = ollama_models() is not None
+    return {'chunks': len(snap.chunks), 'notes': len(snap.notes), 'embedding': dict(RAG.embedding),
+            'embed_model': RAG.vec_model or RAG_CFG.get('embed_model'), 'ollama_up': up,
+            'embed_installed': RAG.embed_model() is not None, 'numpy': rag.np is not None,
+            'answer_model': RAG_CFG.get('answer_model'), 'answer_installed': answer_model() is not None,
+            'busy': ANSWER_LOCK.locked(), 'extracting': extraction_running()}
+
+
 # ------------------------------------------------------------------ writing to the vault
 GENERATED_FILES = ('_system/VAULT-INDEX.md', '_system/catalog.json')   # the gate rebuilds and stages these
 
@@ -1186,7 +1252,7 @@ def status():
         'vault': {'path': VAULT, 'lint_errors': len(errs), 'lint_warnings': len(warns), 'inbox': len(list_inbox()),
                   'staged_changes': git('diff', '--cached', '--quiet').returncode != 0},
         'domains': DOMAINS, 'types': EXTRACT_TYPES, 'sensitivities': SENSITIVITIES,
-        'limits': {'max_upload_mb': LIMITS['max_upload_mb']}}
+        'limits': {'max_upload_mb': LIMITS['max_upload_mb']}, 'rag': rag_status()}
 
 
 # ------------------------------------------------------------------ HTTP
@@ -1199,7 +1265,9 @@ class Handler(BaseHTTPRequestHandler):
     sys_version = ''
 
     def log_message(self, fmt, *args):
-        sys.stderr.write('%s %s\n' % (self.log_date_time_string(), fmt % args))
+        # Query strings can hold questions about client work, so they never reach the terminal or its scrollback.
+        line = re.sub(r'\?[^ "]*', '?…', fmt % args)
+        sys.stderr.write('%s %s\n' % (self.log_date_time_string(), line))
 
     def _send(self, code, body, ctype='application/json; charset=utf-8', extra=None):
         data = body if isinstance(body, bytes) else (json.dumps(body, ensure_ascii=False).encode() if not isinstance(body, str) else body.encode())
@@ -1242,6 +1310,100 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(data, dict): raise Refused('Expected a JSON object.')
         return data
 
+    def _stream_ask(self, payload):
+        """Retrieve, then stream a grounded answer as newline-delimited JSON."""
+        q, client, inbox = ask_flags(payload)
+        if not q: raise Refused('Ask a question first.')
+        if not ANSWER_LOCK.acquire(blocking=False):
+            return self._send(429, {'error': 'Another answer is being written. Wait a moment, or stop it first.'})
+        conn, stop, text, started = None, threading.Event(), [], False
+        try:
+            k = int(RAG_CFG.get('k', 6))
+            res = RAG.search(q, client, inbox, k=k)
+            model = answer_model()
+            started = True
+            self.send_response(200)
+            for h_, v in (('Content-Type', 'application/x-ndjson; charset=utf-8'), ('Cache-Control', 'no-store'),
+                          ('X-Content-Type-Options', 'nosniff'), ('Referrer-Policy', 'no-referrer'), ('Connection', 'close')):
+                self.send_header(h_, v)
+            self.end_headers()
+
+            def emit(obj):
+                self.wfile.write((json.dumps(obj, ensure_ascii=False) + '\n').encode('utf-8', 'replace')); self.wfile.flush()
+
+            emit({'type': 'results', 'results': [{k2: v for k2, v in r.items() if k2 != 'text'} for r in res['results']],
+                  'terms': res['terms'], 'ms': res['ms'], 'vector': res['vector']})
+            if not res['results']:
+                emit({'type': 'done', 'text': '', 'note': 'No notes matched, so there is nothing to answer from.'}); return
+            if ollama_models() is None:
+                emit({'type': 'done', 'text': '', 'note': 'Ollama is not running, so only the search results are shown. Start Ollama to get answers.'}); return
+            if not model:
+                emit({'type': 'done', 'text': '', 'note': f'The answer model {RAG_CFG.get("answer_model")} is not installed. '
+                      f'Run: ollama pull {RAG_CFG.get("answer_model")}'}); return
+            if extraction_running():
+                emit({'type': 'done', 'text': '', 'note': 'An extraction is using the large model, so answers wait until it finishes. '
+                      'The search results above are current.'}); return
+            num_ctx, num_predict = int(RAG_CFG.get('num_ctx', 8192)), int(RAG_CFG.get('num_predict', 600))
+            prompt, sent = rag.answer_prompt(q, res['results'], budget=num_ctx - num_predict - 200)
+            body = {'model': model, 'stream': True, 'keep_alive': RAG_CFG.get('keep_alive', '10m'),
+                    'options': {'num_ctx': num_ctx, 'num_predict': num_predict, 'temperature': float(RAG_CFG.get('temperature', 0.1))},
+                    'messages': [{'role': 'system', 'content': rag.ANSWER_SYSTEM}, {'role': 'user', 'content': prompt}]}
+            u = urlparse(CFG['local']['url'])
+            conn = http.client.HTTPConnection(u.hostname, u.port or 11434, timeout=60)
+            client_sock = self.connection
+
+            def watch():
+                """The page may close while the model is still loading; stop the model as soon as it does."""
+                while not stop.is_set():
+                    try:
+                        r_, _, _ = select.select([client_sock], [], [], 0.5)
+                        if r_ and not client_sock.recv(1, socket.MSG_PEEK):
+                            if conn.sock:
+                                try: conn.sock.shutdown(socket.SHUT_RDWR)
+                                except OSError: pass
+                            return
+                        if r_: time.sleep(0.5)
+                    except (OSError, ValueError):
+                        return
+            threading.Thread(target=watch, daemon=True).start()
+            t0, deadline, finished, reason = time.time(), time.time() + float(RAG_CFG.get('answer_seconds', 180)), False, ''
+            conn.request('POST', '/api/chat', body=json.dumps(body), headers={'Content-Type': 'application/json'})
+            r = conn.getresponse()
+            if r.status != 200:
+                emit({'type': 'error', 'message': f'The answer model refused the request ({r.status}).'}); return
+            while True:
+                if time.time() > deadline: reason = 'time'; break
+                line = r.readline()
+                if not line: break
+                line = line.strip()
+                if not line: continue
+                obj = json.loads(line)
+                if obj.get('error'):
+                    emit({'type': 'error', 'message': 'Ollama: ' + str(obj['error'])[:200], 'text': ''.join(text)}); return
+                piece = obj.get('message', {}).get('content', '')
+                if piece:
+                    text.append(piece)
+                    emit({'type': 'token', 'text': piece})              # a closed page raises here and stops the model
+                if obj.get('done'):
+                    finished, reason = True, ('length' if obj.get('done_reason') == 'length' else ''); break
+            full = ''.join(text)
+            emit({'type': 'done', 'text': full, 'model': model, 'ms': int((time.time() - t0) * 1000),
+                  'truncated': (not finished) or reason == 'length', 'reason': reason or ('' if finished else 'stream'),
+                  'sent': sent, 'check': rag.check_citations(full, sent)})
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            traceback.print_exc()
+            try:
+                if not started: self._send(400, {'error': f'Search failed ({type(e).__name__}).'})
+                else: emit({'type': 'error', 'message': f'{type(e).__name__}: {e}'[:300], 'text': ''.join(text)})
+            except Exception: pass
+        finally:
+            stop.set()
+            if conn is not None: conn.close()
+            ANSWER_LOCK.release()
+            self.close_connection = True
+
     def do_GET(self):
         u = urlparse(self.path)
         if not u.path.startswith('/api/'):
@@ -1273,6 +1435,12 @@ class Handler(BaseHTTPRequestHandler):
                 j = JOBS.get(m.group(1))
                 return self._send(200, public(j)) if j else self._send(404, {'error': 'No such job.'})
             if u.path == '/api/inbox': return self._send(200, list_inbox())
+            if u.path == '/api/search':
+                q, client, inbox = ask_flags({k: v[0] for k, v in parse_qs(u.query).items()})
+                if not q: return self._send(200, {'results': [], 'terms': [], 'ms': 0, 'vector': False})
+                res = RAG.search(q, client, inbox, k=8)
+                for r in res['results']: r.pop('text', None)
+                return self._send(200, res)
             if u.path == '/api/graph': return self._send(200, graph_data())
             if u.path == '/api/graph/note': return self._send(200, graph_note_detail(parse_qs(u.query).get('id', [''])[0]))
             if u.path == '/api/chats': return self._send(200, list_chats())
@@ -1322,6 +1490,7 @@ class Handler(BaseHTTPRequestHandler):
                     shutil.rmtree(job_dir(jid), ignore_errors=True)     # scratch upload, never committed
                     with JOBS_LOCK: JOBS.pop(jid, None)
                     return self._send(200, {'cleared': jid})
+            if u.path == '/api/ask': return self._stream_ask(self._json())
             if u.path == '/api/chats': return self._send(200, create_chat(self._json()))
             if u.path == '/api/chats/start': return self._send(200, start_chat(self._json()))
             m = re.fullmatch(r'/api/chats/([\w-]+)/(messages|settings|delete)', u.path, re.ASCII)
@@ -1352,6 +1521,7 @@ def main():
     os.chmod(WORK, 0o700)
     restore_jobs()
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=rag_maintainer, daemon=True).start()
     try:
         srv = ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
     except OSError as e:

@@ -31,5 +31,19 @@
     "chunk_chars": 40000,
     "max_chunks": 8,
     "max_quote_chars": 300
+  },
+  "rag": {
+    "embed_model": "embeddinggemma",
+    "answer_model": "gemma3:4b",
+    "num_ctx": 8192,
+    "temperature": 0.1,
+    "keep_alive": "10m",
+    "k": 6,
+    "reindex_seconds": 120,
+    "min_similarity": 0.3,
+    "num_predict": 600,
+    "answer_seconds": 180,
+    "query_timeout": 3,
+    "relative_similarity": 0.8
   }
 }

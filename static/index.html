@@ -585,6 +585,24 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
 .result-btn:hover { border-color: var(--mh-border-strong); }
 .card__title, .linkbtn, .result-btn, .meta.mono, .job__name { overflow-wrap: anywhere; }
 
+/* Ask */
+.ask-row { display: flex; gap: var(--mh-space-2); align-items: stretch; }
+.ask-input { flex: 1 1 auto; font-size: 1.05rem; min-height: var(--mh-size-control-lg); }
+.ask-split { display: grid; gap: var(--mh-space-5); grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; }
+@media (max-width: 960px) { .ask-split { grid-template-columns: minmax(0, 1fr); } }
+.answer-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.65; color: var(--mh-fg-default); }
+#askAnswer.is-stale .answer-text { opacity: 0.55; }
+.cite--bad { color: var(--mh-fg-muted); text-decoration: line-through; }
+.cite { appearance: none; display: inline-flex; align-items: center; min-height: var(--mh-size-target-min); padding: 0 var(--mh-space-1-5); margin: 0 1px; border: 1px solid var(--mh-border-default); border-radius: var(--mh-radius-tooltip); background: var(--mh-bg-subtle); color: var(--mh-fg-accent); font-family: var(--mh-font-mono); font-size: 0.78rem; cursor: pointer; vertical-align: baseline; }
+.cite:hover { border-color: var(--mh-border-strong); }
+.results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mh-space-2); }
+.result { display: flex; flex-direction: column; gap: var(--mh-space-1); padding: var(--mh-space-3); border: 1px solid var(--mh-border-subtle); border-radius: var(--mh-radius-tile); background: var(--mh-bg-surface); }
+.result.is-cited { border-color: var(--mh-border-strong); background: var(--mh-bg-accent-subtle); }
+.result__num { font-family: var(--mh-font-mono); font-size: 0.74rem; color: var(--mh-fg-meta); }
+.result__title { font-weight: 600; color: var(--mh-fg-default); overflow-wrap: anywhere; }
+.result__snippet { font-size: 0.86rem; color: var(--mh-fg-body); overflow-wrap: anywhere; }
+mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); border-radius: 3px; padding: 0 2px; }
+
 /* Footer */
 .footer { border-top: 1px solid var(--mh-border-default); }
 .footer__inner { max-width: var(--mh-size-container-wide); margin: 0 auto; padding: var(--mh-space-5) var(--mh-gutter); display: flex; flex-wrap: wrap; gap: var(--mh-space-3); justify-content: space-between; font-size: 0.78rem; color: var(--mh-fg-meta); }
@@ -616,6 +634,7 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
 
   <div class="tabs" role="tablist" aria-label="Views">
     <button class="tab" role="tab" id="tabChat" aria-controls="panelChat" aria-selected="true" type="button">Chat</button>
+    <button class="tab" role="tab" id="tabAsk" aria-controls="panelAsk" aria-selected="false" tabindex="-1" type="button">Ask</button>
     <button class="tab" role="tab" id="tabIntake" aria-controls="panelIntake" aria-selected="false" tabindex="-1" type="button">Files</button>
     <button class="tab" role="tab" id="tabInbox" aria-controls="panelInbox" aria-selected="false" tabindex="-1" type="button">Inbox<span class="count" id="inboxCount"></span></button>
     <button class="tab" role="tab" id="tabGraph" aria-controls="panelGraph" aria-selected="false" tabindex="-1" type="button">Graph</button>
@@ -650,6 +669,29 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
         </div>
         <div id="chatAlert" aria-live="assertive"></div>
       </form>
+    </div>
+  </section>
+
+  <section id="panelAsk" role="tabpanel" aria-labelledby="tabAsk" class="stack stack--loose" hidden>
+    <form class="card stack" id="askForm" novalidate>
+      <div class="stack stack--tight"><p class="eyebrow">Ask your brain</p><h2 class="card__title">Ask in plain English</h2></div>
+      <div class="ask-row">
+        <label class="visually-hidden" for="askInput">Question</label>
+        <input class="input ask-input" type="search" id="askInput" placeholder="What stops a release when reliability is poor?" autocomplete="off">
+        <button class="btn btn--primary" id="askBtn" type="submit">Ask</button>
+      </div>
+      <div class="cluster">
+        <label class="check"><input type="checkbox" id="askClient">Include client and unlabelled notes</label>
+        <label class="check"><input type="checkbox" id="askInbox">Include inbox drafts</label>
+      </div>
+      <p class="field__hint" id="askStatus" aria-live="polite"></p>
+    </form>
+    <div class="ask-split">
+      <section class="card stack" id="askAnswer" aria-live="polite" aria-labelledby="askAnswerTitle"></section>
+      <section class="card stack" aria-labelledby="askResultsTitle">
+        <div class="cluster cluster--between"><h2 class="card__title" id="askResultsTitle">Matching notes</h2><span class="meta mono" id="askMeta"></span></div>
+        <ol class="results" id="askResults"></ol>
+      </section>
     </div>
   </section>
 
@@ -847,11 +889,12 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
   $('dropIcon').appendChild(icon('upload'));
 
   // ---------------------------------------------------------------- tabs
-  const tabs = [$('tabChat'), $('tabIntake'), $('tabInbox'), $('tabGraph')];
+  const tabs = [$('tabChat'), $('tabAsk'), $('tabIntake'), $('tabInbox'), $('tabGraph')];
   function selectTab(t) {
     for (const x of tabs) { const on = x === t; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; }
     if (t === $('tabInbox')) loadInbox();
     if (t === $('tabChat')) loadChats();
+    if (t === $('tabAsk')) { renderAskStatus(); $('askInput').focus(); }
     if (t === $('tabGraph')) graphShow(); else graphHide();
   }
   tabs.forEach((t, i) => {
@@ -878,6 +921,7 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
       ' Drafts land in ', h('code', { text: '00 Inbox' }), '; promote each one when it is right.');
     fillSelects();
     updateProcess();
+    if (typeof renderAskStatus === 'function' && !$('panelAsk').hidden) renderAskStatus();
   }
   let selectsFilled = false;
   function fillSelects() {
@@ -1758,6 +1802,168 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
     renderPanel(); requestDraw();
   }
   function graphHide() { G.visible = false; if (G.sim) G.sim.stop(); if (G.playing) { clearInterval(G.playing); G.playing = null; $('gPlay').textContent = 'Play growth'; } }
+
+  // ---------------------------------------------------------------- ask
+  let askSeq = 0, askAbort = null, askResultsData = [];
+  function renderAskStatus() {
+    const el = $('askStatus'); el.replaceChildren();
+    if (!status || !status.rag) { el.textContent = 'Waiting for the server.'; return; }
+    const r = status.rag; const parts = [`Searching ${r.chunks.toLocaleString('en-GB')} sections in ${r.notes} notes on this Mac.`];
+    const e = r.embedding || {};
+    if (!r.embed_installed) parts.push(' Meaning search is off: ', h('code', { text: `ollama pull ${r.embed_model}` }), ' turns it on.');
+    else if (e.state === 'indexing') parts.push(` Meaning search is indexing (${e.done} of ${e.total}); keyword search works meanwhile.`);
+    else if (e.state === 'error') parts.push(' Meaning search hit an error; keyword search still works.');
+    else parts.push(` Meaning search ready (${r.embed_model}).`);
+    if (!r.answer_installed) parts.push(' Answers are off: ', h('code', { text: `ollama pull ${r.answer_model}` }), ' turns them on.');
+    else parts.push(` Answers by ${r.answer_model}, from your notes only.`);
+    el.append(...parts);
+  }
+  function askEmpty() {
+    $('askAnswer').replaceChildren(h('p', { class: 'eyebrow', text: 'Answer' }), h('h2', { class: 'card__title', id: 'askAnswerTitle', text: 'Ask a question' }),
+      h('p', { class: 'meta', text: 'Results appear as you type. Press Enter or Ask for an answer written from the matching notes, with each claim cited.' }));
+  }
+  const vaultName = () => (status && status.vault && status.vault.path ? status.vault.path.split('/').filter(Boolean).pop() : 'brain');
+  const obsidianLink = (path) => `obsidian://open?vault=${encodeURIComponent(vaultName())}&file=${encodeURIComponent(path.replace(/\.md$/, ''))}`;
+  function marked(text, marks) {
+    // The server names the exact words to highlight, so the page never guesses at its stemmer.
+    const want = new Set((marks || []).map((w) => w.toLowerCase()));
+    const out = [];
+    for (const w of String(text).split(/(\s+)/)) {
+      const core = w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}%]+$/gu, '').toLowerCase();
+      if (core && want.has(core)) out.push(h('mark', { text: w })); else out.push(w);
+    }
+    return out;
+  }
+  const searchMeta = (d) => `${d.ms} ms · ${d.vector ? 'keywords and meaning' : 'keywords only'}`;
+  function renderAskResults(list, meta) {
+    askResultsData = list;
+    $('askMeta').textContent = meta || '';
+    const ol = $('askResults'); ol.replaceChildren();
+    if (!list.length) { ol.appendChild(h('li', { class: 'meta', text: 'No notes match yet.' })); return; }
+    for (const r of list) {
+      ol.appendChild(h('li', { class: 'result', id: 'ar-' + r.n },
+        h('div', { class: 'cluster cluster--between' }, h('span', { class: 'result__num', text: `[${r.n}]` }),
+          h('div', { class: 'cluster' }, r.sensitivity !== 'internal' ? badge('neutral', r.sensitivity) : null, r.inbox ? badge('neutral', 'inbox draft') : null)),
+        h('span', { class: 'result__title', text: r.title }),
+        r.heading && r.heading !== r.title ? h('span', { class: 'meta', text: r.heading }) : null,
+        h('p', { class: 'result__snippet' }, marked(r.snippet, r.marks)),
+        h('div', { class: 'cluster' },
+          h('a', { class: 'btn btn--sm', href: obsidianLink(r.path) }, 'Open in Obsidian'),
+          h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: () => openInGraph(r.path) }, 'Show in graph'))));
+    }
+  }
+  const askParams = () => ({ client: $('askClient').checked, inbox: $('askInbox').checked });
+  let typeTimer = null, answered = null;           // answered: the results list the current answer cites
+  $('askInput').addEventListener('input', () => { clearTimeout(typeTimer); typeTimer = setTimeout(liveSearch, 250); });
+  ['askClient', 'askInbox'].forEach((id) => $(id).addEventListener('change', liveSearch));
+  async function liveSearch() {
+    if (askAbort) return;                                          // an answer is streaming; its sources stay on screen
+    const q = $('askInput').value.trim(); const seq = ++askSeq;
+    if (!q) { renderAskResults([], ''); return; }
+    const p = askParams();
+    try {
+      const d = await api(`/api/search?q=${encodeURIComponent(q)}&client=${p.client ? 1 : 0}&inbox=${p.inbox ? 1 : 0}`);
+      if (seq !== askSeq || askAbort) return;                      // a newer keystroke or an answer won
+      renderAskResults(d.results, searchMeta(d));
+      if (answered) $('askAnswer').classList.add('is-stale');
+    } catch (err) { if (seq === askSeq) setAlert($('askAnswer'), 'danger', err.message); }
+  }
+  function citeNumbers(group) {
+    const nums = [];
+    for (const part of group.split(/\s*,\s*/)) {
+      const m = part.match(/^(\d{1,3})\s*[-–]\s*(\d{1,3})$/);
+      if (m) { const a = +m[1], b = +m[2]; if (b >= a && b - a <= 10) for (let n = a; n <= b; n++) nums.push(n); }
+      else if (/^\d{1,3}$/.test(part)) nums.push(+part);
+    }
+    return nums;
+  }
+  function renderAnswer(q, results, ev) {
+    const box = $('askAnswer'); box.classList.remove('is-stale');
+    box.replaceChildren(h('p', { class: 'eyebrow', text: 'Answer' }), h('h2', { class: 'card__title', id: 'askAnswerTitle', text: q }));
+    if (ev.note) { box.appendChild(alertBox('info', ev.note)); answered = null; return; }
+    answered = results;
+    const valid = new Set(ev.sent || results.map((r) => r.n));
+    const check = ev.check || null;
+    if (check && check.not_covered) box.appendChild(alertBox('warning', 'Your notes do not answer this directly. The closest matches are listed with the results.'));
+    const p = h('p', { class: 'answer-text' });
+    for (const part of String(ev.text || '').trim().split(/(\[\d{1,3}(?:\s*[,–-]\s*\d{1,3})*\])/)) {
+      const m = part.match(/^\[(.+)\]$/);
+      if (m && /^\d/.test(m[1])) {
+        for (const n of citeNumbers(m[1])) {
+          p.appendChild(valid.has(n) ? h('button', { class: 'cite', type: 'button', 'aria-label': 'Show source ' + n, onclick: () => showCited(n) }, `[${n}]`)
+            : h('span', { class: 'cite cite--bad', title: 'Not one of the excerpts', text: `[${n}?]` }));
+        }
+      } else p.appendChild(document.createTextNode(part));
+    }
+    box.appendChild(p);
+    if (ev.truncated) box.appendChild(alertBox('warning', ev.reason === 'length' ? 'The answer reached its length limit and stops mid-way. Ask a narrower question for the rest.'
+      : ev.reason === 'time' ? 'The answer took too long and was stopped. What is shown is incomplete.' : 'The answer was cut off before the model finished. What is shown is incomplete.'));
+    if (check) {
+      if (check.invalid.length) box.appendChild(alertBox('warning', `The answer cites ${check.invalid.map((n) => '[' + n + ']').join(' ')}, which is not one of the excerpts it was shown. Treat that sentence with care.`));
+      if (check.uncited_sentences && !check.not_covered) box.appendChild(alertBox('info', `${check.uncited_sentences} of ${check.sentences} sentence${check.sentences === 1 ? '' : 's'} carry no citation; check them against the notes.`));
+      for (const n of check.cited) { const li = $('ar-' + n); if (li) li.classList.add('is-cited'); }
+    }
+    box.appendChild(h('p', { class: 'meta mono', text: `${ev.model || ''}${ev.ms ? ` · ${(ev.ms / 1000).toFixed(1)} s` : ''} · written only from the excerpts listed` }));
+  }
+  function showCited(n) {
+    // If the list changed since the answer, bring back the list the answer cites before pointing at it.
+    if (answered && askResultsData !== answered) { renderAskResults(answered, 'The sources this answer cites'); $('askAnswer').classList.remove('is-stale'); }
+    const li = $('ar-' + n); if (!li) return;
+    li.scrollIntoView({ block: 'nearest', behavior: REDUCED.matches ? 'auto' : 'smooth' }); li.classList.add('is-cited'); li.querySelector('a, button').focus();
+  }
+  $('askForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const q = $('askInput').value.trim(); if (!q) return;
+    if (askAbort) askAbort.abort();
+    const ctl = new AbortController(); askAbort = ctl; ++askSeq; clearTimeout(typeTimer); answered = null;
+    const box = $('askAnswer'); box.classList.remove('is-stale'); const live = h('p', { class: 'answer-text' });
+    box.replaceChildren(h('p', { class: 'eyebrow', text: 'Answer' }), h('h2', { class: 'card__title', id: 'askAnswerTitle', text: q }),
+      h('div', { class: 'stack stack--tight', 'aria-hidden': 'true' }, h('div', { class: 'skeleton skeleton--wide' }), h('div', { class: 'skeleton skeleton--mid' })), live);
+    $('askBtn').setAttribute('aria-disabled', 'true');
+    let results = [], text = '', finished = false;
+    try {
+      const res = await fetch('/api/ask', { method: 'POST', signal: ctl.signal, credentials: 'same-origin',
+        headers: { 'X-Intake-Token': TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify({ q, ...askParams() }) });
+      if (!res.ok) { let m = 'The question could not be answered.'; try { m = (await res.json()).error || m; } catch (_) { /* not JSON */ } throw new Error(m); }
+      const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '', started = false;
+      const handle = (line) => {
+        if (!line.trim()) return;
+        let ev; try { ev = JSON.parse(line); } catch (_) { return; }
+        if (ev.type === 'results') { results = ev.results; renderAskResults(results, searchMeta(ev)); }
+        else if (ev.type === 'token') { if (!started) { started = true; const sk = box.querySelector('.stack'); if (sk) sk.remove(); } text += ev.text; live.textContent = text; }
+        else if (ev.type === 'done') { finished = true; renderAnswer(q, results, ev); }
+        else if (ev.type === 'error') {
+          finished = true;
+          renderAnswer(q, results, { text: ev.text || text, truncated: !!(ev.text || text), reason: 'stream' });
+          box.insertBefore(alertBox('danger', ev.message), box.children[2] || null);
+        }
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) { buf += dec.decode(); break; }
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) { const line = buf.slice(0, i); buf = buf.slice(i + 1); handle(line); }
+      }
+      handle(buf);
+      if (!finished) renderAnswer(q, results, { text, truncated: true, reason: 'stream' });   // the stream ended without a done event
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        if (text) { renderAnswer(q, results, { text, truncated: true, reason: 'stream' }); box.insertBefore(alertBox('danger', err.message), box.children[2] || null); }
+        else box.replaceChildren(h('p', { class: 'eyebrow', text: 'Answer' }), h('h2', { class: 'card__title', id: 'askAnswerTitle', text: q }), alertBox('danger', err.message));
+      }
+    }
+    finally { if (askAbort === ctl) askAbort = null; $('askBtn').setAttribute('aria-disabled', 'false'); }
+  });
+  async function openInGraph(path) {
+    selectTab($('tabGraph'));
+    for (let i = 0; i < 60 && !G.data; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!G.data || !G.byId.has(path)) return;
+    const n = G.byId.get(path);
+    if (!G.shown.has(path)) { $('gDomain').value = ''; $('gType').value = ''; if (n.inbox) $('gInbox').checked = true; if (!isOpen(n)) $('gClient').checked = true; G.cutoff = null; $('gRange').value = $('gRange').max; updateRangeLabel(); rebuild(); }
+    selectNode(path); setTimeout(() => centreOn(path), 60);
+  }
+  askEmpty();
 
   loadStatus(); setInterval(loadStatus, 8000);
   loadJobs();

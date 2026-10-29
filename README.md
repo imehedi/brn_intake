@@ -30,6 +30,46 @@ The Chat tab is the quickest way in. Choose a sensitivity once per chat, then ty
 
 The Graph tab draws the vault the way Obsidian does: every note a node, every link an edge, coloured by domain, type, sensitivity, status or your Obsidian colour groups, in the brand's chart palette. Search, filter, show a note's local graph (one to three links out), add tags as nodes, switch on the health overlay (orphans, missing summaries, unverified drafts, broken links), replay the vault's growth on the timeline, and export the view as PNG or SVG. The side panel shows a note's summary, backlinks and links out, with Open in Obsidian. Client summaries stay hidden until you ask, and Client notes can be switched off before you share a screen. It reads the vault live on each refresh through the same parser as the commit gate; nothing is fetched from the internet.
 
+## Ask your notes
+
+The Ask tab answers questions in plain English from this vault, on this Mac.
+
+**Set it up once:**
+
+```sh
+ollama pull embeddinggemma   # about 620 MB: lets search match meaning
+ollama pull gemma3:4b        # about 3.3 GB: writes the answers
+```
+
+Keyword search works without either model. Without `embeddinggemma`, search matches words only. Without `gemma3:4b`, Ask shows the matching notes but writes no answer.
+
+**How it finds notes.** Each note is split at its headings. A keyword ranking (BM25) is combined with a meaning ranking from `embeddinggemma`, then lightly boosted for notes linked to the best matches. No note contributes more than two sections. British and American spellings are treated as the same word, as are simple word forms: organisation and organizations, colour and colors, logging and log. Vectors are cached in `.work/rag/` by content hash, so only new or changed sections are embedded. A background thread picks up edits within a few seconds.
+
+**How it answers.** `gemma3:4b` sees only the top excerpts, fenced as data, and must cite one for every sentence. The page checks the citations. A number the model was not shown is struck through with a warning, and uncited sentences are counted. Clicking a citation shows its source. If you change the question afterwards, the old answer is dimmed, and clicking a citation brings back the sources it was written from.
+
+**What it can see:**
+- Only `internal` and `personal` notes, by default.
+- Client and unlabelled notes, only when **Include client and unlabelled notes** is ticked. A note whose frontmatter cannot be read, or which repeats a key such as `sensitivity`, counts as unlabelled.
+- Inbox drafts, only when **Include inbox drafts** is ticked.
+
+The server applies these rules before ranking, and the page cannot widen them. Full section text never leaves the server; the page receives a snippet.
+
+**Protecting the Mac:**
+- One answer at a time; a second request is refused until the first finishes.
+- An answer is capped at 600 tokens and 180 seconds.
+- While an extraction is running on the large model, answers and embedding wait, and search carries on.
+- Closing the page stops the model.
+- If Ollama hangs, search falls back to keywords within three seconds.
+
+| Setting in `config.json` → `rag` | Default | Meaning |
+|---|---|---|
+| `embed_model` | `embeddinggemma` | Embedding model for meaning search |
+| `answer_model` | `gemma3:4b` | Model that writes answers |
+| `k` | 6 | Excerpts given to the answer model |
+| `num_ctx` / `num_predict` | 8192 / 600 | Context and answer length, in tokens |
+| `min_similarity` | 0.3 | Floor for a meaning match |
+| `reindex_seconds` | 120 | Longest wait before a background re-index |
+
 ## What happens to a drop
 
 1. **Read on this Mac.** PDF, Word, PowerPoint, Excel, HTML, RTF, ODT, Markdown, text, CSV and JSON are turned into text locally. Scanned PDFs need OCR first.
@@ -76,7 +116,8 @@ Only text extracted from the file would be sent, together with the titles of `in
 | Path | Purpose |
 |---|---|
 | `server.py` | The local server: extraction, model calls, checks, vault writes |
-| `static/index.html` | The page, in the MH3 studio brand: Chat, Files, Inbox and Graph |
+| `rag.py` | Local retrieval for the Ask tab: chunking, keyword and meaning search, answer prompt, citation check |
+| `static/index.html` | The page, in the MH3 studio brand: Chat, Ask, Files, Inbox and Graph |
 | `static/vendor/d3-force-bundle.js` | d3-force 3.0.0 and its three dependencies (ISC licence), stored locally |
 | `prompts/extract.txt` | The extraction instructions given to the model |
 | `config.json` | Port, models, limits and the data boundary |
