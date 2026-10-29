@@ -1,0 +1,35 @@
+{
+  "_comment": "Brain Intake configuration. This file is tracked in git, so every change to the data boundary leaves an audit trail.",
+  "host": "127.0.0.1",
+  "port": 8765,
+  "allow_cloud": false,
+  "local": {
+    "url": "http://127.0.0.1:11434",
+    "default_model": "gemma3:27b",
+    "num_ctx": 32768,
+    "temperature": 0.2,
+    "keep_alive": "15m"
+  },
+  "cloud": {
+    "default_provider": "anthropic",
+    "anthropic": {
+      "model": "claude-sonnet-5-5",
+      "deep_model": "claude-opus-5-5",
+      "max_tokens": 8000,
+      "keychain_service": "brain-intake-anthropic",
+      "env": "ANTHROPIC_API_KEY"
+    },
+    "openai": {
+      "model": "",
+      "max_tokens": 8000,
+      "keychain_service": "brain-intake-openai",
+      "env": "OPENAI_API_KEY"
+    }
+  },
+  "limits": {
+    "max_upload_mb": 50,
+    "chunk_chars": 40000,
+    "max_chunks": 8,
+    "max_quote_chars": 300
+  }
+}
