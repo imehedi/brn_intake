@@ -51,7 +51,13 @@ Only text extracted from the file would be sent, together with the titles of `in
 - Listens on `127.0.0.1` only, and refuses a request with a foreign Host or Origin header, a cross-site fetch, or a missing per-session token. A content security policy allows only the page's own script.
 - A dropped document is treated as data. Its text is fenced in the prompt, the model's output is parsed as JSON and never executed, and the page renders every string as text.
 - The server writes only to `00 Inbox/`, `_sources/`, hub notes on promotion and `_archive/`. It refuses to commit while you have other changes staged, or when the hub has uncommitted edits.
-- Uploads wait in `_system/intake/.work/` (git-ignored) until saved. Clear removes that scratch copy.
+- Files are read in a separate process with a three-minute limit, and archives that would expand to an unsafe size are refused before they are opened.
+- The local model is reached directly on `127.0.0.1`, never through a proxy, and Ollama models that run remotely are not offered.
+- Model text is cleaned before it is saved: links that would not resolve become plain text, remote images and raw HTML are removed, and headings that would imitate the Evidence, Source or Related sections are relabelled.
+- A hub never carries text more sensitive than itself. A client note promoted into an internal hub gets a bare link with no summary.
+- A quotation counts as found only if it appears word for word, or as ordered fragments of 25 characters or more. Notes with no verified quotation start unticked.
+- If a commit fails, for example because a signing prompt was dismissed, everything is put back, including the generated index.
+- Uploads wait in `_system/intake/.work/` (git-ignored, private to your user) until saved. Clear removes that scratch copy.
 
 ## Files
 

@@ -336,8 +336,6 @@ code, .mono { font-family: var(--mh-font-mono); font-size: 0.92em; }
 .topbar__status { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--mh-space-2); align-items: center; }
 .chip { display: inline-flex; align-items: center; gap: var(--mh-space-1-5); min-height: var(--mh-size-target-min); padding: 0 var(--mh-space-2-5); border-radius: var(--mh-radius-chip); border: 1px solid var(--mh-border-inverse); color: var(--mh-fg-inverse); font-size: 0.74rem; font-weight: 500; }
 .chip svg { width: var(--mh-size-icon-sm); height: var(--mh-size-icon-sm); }
-.btn--inverse { color: var(--mh-fg-inverse); border-color: var(--mh-border-inverse); background: transparent; }
-.btn--inverse:hover { background: var(--mh-bg-inverse-raised); }
 
 /* Shell */
 .shell { max-width: var(--mh-size-container-wide); margin: 0 auto; padding: var(--mh-space-8) var(--mh-gutter) var(--mh-space-12); }
@@ -369,6 +367,9 @@ code, .mono { font-family: var(--mh-font-mono); font-size: 0.92em; }
 .btn--sm { min-height: var(--mh-size-control-sm); padding: 0.3rem 0.7rem; font-size: 0.78rem; }
 .btn[disabled], .btn[aria-disabled="true"] { opacity: var(--mh-opacity-disabled); cursor: not-allowed; transform: none; }
 
+.topbar .btn--inverse { color: var(--mh-fg-inverse); border-color: var(--mh-border-inverse); background: transparent; }
+.topbar .btn--inverse:hover { background: var(--mh-bg-inverse-raised); }
+
 /* Fields */
 .field { display: flex; flex-direction: column; gap: var(--mh-space-1); min-width: 0; }
 .field__label { font-size: 0.78rem; font-weight: 600; color: var(--mh-fg-default); }
@@ -379,7 +380,7 @@ code, .mono { font-family: var(--mh-font-mono); font-size: 0.92em; }
 .textarea--mono { font-family: var(--mh-font-mono); font-size: 0.86rem; }
 .input--title { font-weight: 600; }
 .prefixed { display: flex; align-items: stretch; }
-.prefixed__label { display: inline-flex; align-items: center; padding: 0 var(--mh-space-2-5); border: 1px solid var(--mh-border-control); border-right: 0; border-radius: var(--mh-radius-field) 0 0 var(--mh-radius-field); background: var(--mh-bg-sunken); color: var(--mh-fg-meta); font-family: var(--mh-font-mono); font-size: 0.84rem; }
+.prefixed__label { white-space: nowrap; flex: none; display: inline-flex; align-items: center; padding: 0 var(--mh-space-2-5); border: 1px solid var(--mh-border-control); border-right: 0; border-radius: var(--mh-radius-field) 0 0 var(--mh-radius-field); background: var(--mh-bg-sunken); color: var(--mh-fg-meta); font-family: var(--mh-font-mono); font-size: 0.84rem; }
 .prefixed .input { border-radius: 0 var(--mh-radius-field) var(--mh-radius-field) 0; }
 fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 legend { padding: 0; }
@@ -448,10 +449,12 @@ details > summary { cursor: pointer; font-size: 0.84rem; font-weight: 600; color
 .skeleton { border-radius: var(--mh-radius-tile); background: var(--mh-bg-subtle); height: 0.9rem; }
 .skeleton--wide { width: 90%; } .skeleton--mid { width: 70%; } .skeleton--short { width: 45%; }
 @media (prefers-reduced-motion: no-preference) { .skeleton { animation: pulse 1.6s var(--mh-ease) infinite; } @keyframes pulse { 50% { opacity: 0.5; } } }
+#review { padding-bottom: var(--mh-space-4); }
 .savebar { position: sticky; bottom: var(--mh-space-3); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--mh-space-3); padding: var(--mh-space-3) var(--mh-space-4); background: var(--mh-bg-raised); border: 1px solid var(--mh-border-default); border-radius: var(--mh-radius-card); box-shadow: var(--mh-shadow-lg); }
 
 /* Table */
 .table-wrap { overflow-x: auto; }
+.table-wrap .select { min-width: 9.5rem; }
 table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 th { text-align: left; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mh-fg-meta); padding: var(--mh-space-2) var(--mh-space-3); border-bottom: 1px solid var(--mh-border-default); }
 td { padding: var(--mh-space-3); border-bottom: 1px solid var(--mh-border-subtle); vertical-align: top; }
@@ -667,7 +670,9 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
     chip($('chipLocal'), L.up ? 'check' : 'danger', L.up ? 'Local model: ready' : 'Local model: Ollama not running');
     chip($('chipCloud'), 'lock', status.cloud.allowed ? 'Cloud: allowed for non-client material' : 'Cloud: locked');
     const v = status.vault;
-    chip($('chipVault'), v.lint_errors ? 'danger' : 'check', v.lint_errors ? `Vault: ${v.lint_errors} lint errors` : 'Vault: lint clean');
+    if (v.lint_errors) chip($('chipVault'), 'danger', `Vault: ${v.lint_errors} lint errors`);
+    else if (v.staged_changes) chip($('chipVault'), 'warn', 'Vault: changes staged; commit them first');
+    else chip($('chipVault'), 'check', 'Vault: lint clean');
     $('inboxCount').textContent = v.inbox ? String(v.inbox) : '';
     $('maxMb').textContent = status.limits.max_upload_mb;
     $('lede').replaceChildren('Text is read on this Mac and turned into draft notes by ', h('code', { text: L.default }),
@@ -806,7 +811,7 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
     if (j.state !== 'ready') return;
     if (!j.notes.length) { root.appendChild(h('div', { class: 'empty' }, h('p', { text: 'The model found nothing durable in this source.' }))); return; }
     const E = edits[j.id] = edits[j.id] || {};
-    j.notes.forEach((n) => { if (!E[n.id]) E[n.id] = { id: n.id, include: !n.flags.some((f) => f.level === 'danger'), title: n.title, heading: n.heading, type: n.type, domain: n.domain, summary: n.summary, body: n.body, tags: n.tags.slice(), links: n.links.slice(), sensitivity: j.sensitivity }; });
+    j.notes.forEach((n) => { if (!E[n.id]) E[n.id] = { id: n.id, include: !n.flags.some((f) => f.level === 'danger') && n.evidence.some((x) => x.verified), title: n.title, heading: n.heading, type: n.type, domain: n.domain, summary: n.summary, body: n.body, tags: n.tags.slice(), links: n.links.slice(), sensitivity: j.sensitivity }; });
     j.notes.forEach((n, idx) => root.appendChild(noteCard(j, n, E[n.id], idx)));
     const saveBtn = h('button', { class: 'btn btn--primary', type: 'button', onclick: () => save(j) }, 'Save selected to inbox');
     const count = h('span', { class: 'field__hint', id: 'saveCount' });
@@ -831,7 +836,7 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
     const sensOpts = ['internal', 'personal', 'client'].filter((s) => ['internal', 'personal', 'client'].indexOf(s) >= ['internal', 'personal', 'client'].indexOf(j.sensitivity));
     const sumCount = h('span', { class: 'field__hint mono', text: `${e.summary.length}/160` });
     const include = h('input', { type: 'checkbox', checked: e.include, onchange: (ev) => { e.include = ev.target.checked; card.classList.toggle('note--excluded', !e.include); updateSaveCount(j); } });
-    card.append(
+    card.append(...[
       h('div', { class: 'cluster cluster--between' },
         h('label', { class: 'check' }, include, `Include note ${idx + 1}`),
         h('div', { class: 'cluster' }, badge(n.confidence === 'high' ? 'success' : n.confidence === 'medium' ? 'info' : 'warning', 'Confidence ' + n.confidence))),
@@ -857,7 +862,7 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
         h('ul', { class: 'evidence' }, n.evidence.map((ev) => h('li', { class: 'stack stack--tight' }, h('q', { text: ev.quote }),
           h('div', { class: 'cluster' }, ev.verified ? badge('success', 'Found in source') : badge('warning', 'Not found word for word'), h('span', { class: 'meta', text: ev.where || 'location not given' })))))) : null,
       e.links.length ? h('div', { class: 'stack stack--tight' }, h('p', { class: 'section-label', text: 'Will link to' }), h('div', { class: 'tags' }, e.links.map((l) => h('span', { class: 'tag', text: l })))) : null
-    );
+    ].filter(Boolean));
     return card;
   }
   async function act(what) {
