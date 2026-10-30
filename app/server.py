@@ -706,7 +706,7 @@ def replace_names(text, pats):
     for i, c in enumerate(text):
         for ch in brain.fold(c): folded.append(ch); idx.append(i)
     ftext, spans = ''.join(folded), []
-    for acr, rx in pats:
+    for acr, rx, *_ in pats:                       # (acronym, pattern, is_hard): hard and soft forms are both replaced
         spans += [(idx[m.start()], idx[m.end() - 1] + 1, acr) for m in rx.finditer(ftext) if m.end() > m.start()]
     if not spans: return text, set()
     out, pos, used = [], 0, set()
