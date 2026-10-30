@@ -497,6 +497,8 @@ details > summary { cursor: pointer; font-size: 0.84rem; font-weight: 600; color
 
 /* Tabs */
 .tabs { display: flex; gap: var(--mh-space-1); border-bottom: 1px solid var(--mh-border-default); margin-bottom: var(--mh-space-5); }
+.tabs { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; max-width: 100%; }
+.tabs .tab { flex: 0 0 auto; white-space: nowrap; }
 .tab { appearance: none; border: 0; background: transparent; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--mh-fg-muted); padding: var(--mh-space-2) var(--mh-space-3); min-height: var(--mh-size-control-md); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
 .tab:hover { color: var(--mh-fg-default); }
 .tab[aria-selected="true"] { color: var(--mh-fg-accent); border-bottom-color: var(--mh-fg-accent); }
@@ -530,6 +532,14 @@ details > summary { cursor: pointer; font-size: 0.84rem; font-weight: 600; color
 
 /* Table */
 .table-wrap { overflow-x: auto; }
+.pre-wrap { white-space: pre-wrap; }
+.pick { width: 2.25rem; }
+.chip--action { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.pick input { width: 18px; height: 18px; accent-color: var(--mh-action-primary-bg); }
+.bulkbar { padding: var(--mh-space-2) 0; }
+.timeline { list-style: none; padding: 0; margin: 0; }
+tr.is-current td { background: var(--mh-bg-subtle); }
+.cluster--end { justify-content: flex-end; }
 .table-wrap .select { min-width: 9.5rem; }
 table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
 th { text-align: left; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mh-fg-meta); padding: var(--mh-space-2) var(--mh-space-3); border-bottom: 1px solid var(--mh-border-default); }
@@ -618,7 +628,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     <div class="topbar__status" aria-live="polite">
       <span class="chip" id="chipLocal">Local model: checking</span>
       <span class="chip" id="chipCloud">Cloud: checking</span>
-      <span class="chip" id="chipVault">Vault: checking</span>
+      <span class="chip" id="chipVault" role="button" tabindex="0">Vault: checking</span>
       <button class="btn btn--sm btn--inverse" id="themeBtn" type="button">Theme: system</button>
     </div>
   </div>
@@ -636,6 +646,8 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     <button class="tab" role="tab" id="tabAsk" aria-controls="panelAsk" aria-selected="false" tabindex="-1" type="button">Ask</button>
     <button class="tab" role="tab" id="tabIntake" aria-controls="panelIntake" aria-selected="false" tabindex="-1" type="button">Files</button>
     <button class="tab" role="tab" id="tabInbox" aria-controls="panelInbox" aria-selected="false" tabindex="-1" type="button">Inbox<span class="count" id="inboxCount"></span></button>
+    <button class="tab" role="tab" id="tabPeople" aria-controls="panelPeople" aria-selected="false" tabindex="-1" type="button">People</button>
+    <button class="tab" role="tab" id="tabResearch" aria-controls="panelResearch" aria-selected="false" tabindex="-1" type="button">Research</button>
     <button class="tab" role="tab" id="tabGraph" aria-controls="panelGraph" aria-selected="false" tabindex="-1" type="button">Graph</button>
   </div>
 
@@ -682,6 +694,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
       <div class="cluster">
         <label class="check"><input type="checkbox" id="askClient">Include client and unlabelled notes</label>
         <label class="check"><input type="checkbox" id="askInbox">Include inbox drafts</label>
+        <label class="check"><input type="checkbox" id="askPeople">Include people</label>
       </div>
       <p class="field__hint" id="askStatus" aria-live="polite"></p>
     </form>
@@ -712,6 +725,13 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
             <div class="field"><label class="field__label" for="pasteText">Text</label><textarea class="textarea" id="pasteText"></textarea></div>
           </div>
         </details>
+        <fieldset class="stack stack--tight">
+          <legend class="field__label">Kind of material</legend>
+          <div class="choices" id="modeChoices">
+            <label class="choice"><input type="radio" name="mode" value="general" checked><span class="choice__name">General</span><span class="choice__note">Notes, articles, meetings, documents</span></label>
+            <label class="choice"><input type="radio" name="mode" value="research"><span class="choice__name">Research paper</span><span class="choice__note">One paper: literature note, claims, methods, datasets, with its BibTeX</span></label>
+          </div>
+        </fieldset>
         <fieldset class="stack stack--tight">
           <legend class="field__label">Sensitivity <span class="muted">(required)</span></legend>
           <div class="choices" id="sensChoices">
@@ -749,8 +769,67 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
       </div>
       <p class="field__hint">Promoting a note moves it to its domain folder, sets its status, links it from the hub and commits all three together. If the vault's gate refuses, nothing changes.</p>
       <div id="inboxAlert" aria-live="assertive"></div>
+      <div class="cluster bulkbar" id="inboxBulk" hidden>
+        <span class="field__hint" id="bulkCount" aria-live="polite"></span>
+        <label class="visually-hidden" for="bulkStatus">Status after promotion for the selected notes</label>
+        <select class="select" id="bulkStatus"><option value="evergreen">Evergreen</option><option value="observed">Observed</option><option value="draft">Keep as draft</option></select>
+        <button class="btn btn--sm btn--primary" id="bulkPromote" type="button">Promote selected</button>
+        <button class="btn btn--sm btn--ghost" id="bulkClear" type="button">Clear selection</button>
+      </div>
       <div class="table-wrap" id="inboxTable"></div>
     </div>
+  </section>
+  <section id="panelPeople" role="tabpanel" aria-labelledby="tabPeople" class="split" hidden>
+    <div class="stack stack--loose">
+      <section class="card stack" aria-labelledby="peopleTitle">
+        <div class="card__header">
+          <div class="stack stack--tight"><p class="eyebrow">People store &middot; restricted</p><h2 class="card__title" id="peopleTitle">People you know</h2></div>
+          <label class="check"><input type="checkbox" id="pHideNames">Hide names</label>
+        </div>
+        <p class="field__hint">Names live only in the register. Everywhere else in the vault a person is their acronym. Nothing here goes to a cloud model, and Ask and Graph leave people out unless you tick Include people.</p>
+        <div id="peopleAlert" aria-live="assertive"></div>
+        <div class="table-wrap" id="peopleTable"></div>
+      </section>
+      <form class="card stack" id="personForm" novalidate>
+        <div class="stack stack--tight"><p class="eyebrow">Register</p><h2 class="card__title">Add a person</h2></div>
+        <div class="grid">
+          <div class="field"><label class="field__label" for="pName">Full name</label><input class="input" id="pName" autocomplete="off"></div>
+          <div class="field"><label class="field__label" for="pAcr">Acronym</label><input class="input mono" id="pAcr" maxlength="6" autocomplete="off" placeholder="from the initials"></div>
+        </div>
+        <div class="grid">
+          <div class="field"><label class="field__label" for="pHow">How you know them</label><input class="input" id="pHow" maxlength="160" autocomplete="off" placeholder="Former colleague at a client"></div>
+          <div class="field"><label class="field__label" for="pSince">Since</label><input class="input mono" id="pSince" maxlength="10" autocomplete="off" placeholder="2024 or 2024-05"></div>
+        </div>
+        <fieldset class="stack stack--tight"><legend class="field__label">Context</legend><div class="cluster" id="pContexts"></div></fieldset>
+        <div class="cluster cluster--between"><p class="field__hint">The acronym is never reused, even if the person is later erased.</p><button class="btn btn--primary" type="submit">Add to register</button></div>
+        <div id="personAlert" aria-live="assertive"></div>
+      </form>
+    </div>
+    <section class="stack" id="personView" aria-live="polite"></section>
+  </section>
+
+  <section id="panelResearch" role="tabpanel" aria-labelledby="tabResearch" class="split" hidden>
+    <div class="stack stack--loose">
+      <section class="card stack" aria-labelledby="libTitle">
+        <div class="card__header"><div class="stack stack--tight"><p class="eyebrow">research/library.bib</p><h2 class="card__title" id="libTitle">Library</h2></div>
+          <button class="btn btn--sm" id="refreshResearch" type="button">Refresh</button></div>
+        <p class="field__hint">To add a paper, drop it in Files with Research paper chosen. Its BibTeX entry is written with its notes, in one commit.</p>
+        <div id="researchAlert" aria-live="assertive"></div>
+        <div class="table-wrap" id="libTable"></div>
+      </section>
+      <form class="card stack" id="nbForm" novalidate>
+        <div class="stack stack--tight"><p class="eyebrow">Lab notebook</p><h2 class="card__title">Start a notebook</h2></div>
+        <div class="field"><label class="field__label" for="nbProject">Project</label><input class="input" id="nbProject" autocomplete="off" placeholder="Agent eval on long-horizon tasks"></div>
+        <div class="field"><label class="field__label" for="nbAim">Aim</label><textarea class="textarea" id="nbAim" rows="3" placeholder="What it is for, and the hypothesis it tests."></textarea></div>
+        <fieldset class="stack stack--tight"><legend class="field__label">Fields</legend><div class="cluster" id="nbFields"></div></fieldset>
+        <div class="cluster cluster--between">
+          <div class="field"><label class="field__label" for="nbSens">Sensitivity</label><select class="select" id="nbSens"><option value="personal" selected>personal (unpublished)</option><option value="internal">internal</option><option value="client">client</option></select></div>
+          <button class="btn btn--primary" type="submit">Start notebook</button>
+        </div>
+        <div id="nbAlert" aria-live="assertive"></div>
+      </form>
+    </div>
+    <section class="stack" id="notebooks" aria-live="polite"></section>
   </section>
   <section id="panelGraph" role="tabpanel" aria-labelledby="tabGraph" class="stack stack--loose" hidden>
     <div class="card stack">
@@ -774,6 +853,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
         <label class="check"><input type="checkbox" id="gTags">Tags as nodes</label>
         <label class="check"><input type="checkbox" id="gInbox" checked>Inbox drafts</label>
         <label class="check"><input type="checkbox" id="gClient" checked>Client and unlabelled notes</label>
+        <label class="check"><input type="checkbox" id="gPeople">People</label>
         <label class="check"><input type="checkbox" id="gHealth">Health overlay</label>
         <label class="check"><input type="checkbox" id="gLabels">All labels</label>
       </div>
@@ -896,12 +976,14 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   $('dropIcon').appendChild(icon('upload'));
 
   // ---------------------------------------------------------------- tabs
-  const tabs = [$('tabChat'), $('tabAsk'), $('tabIntake'), $('tabInbox'), $('tabGraph')];
+  const tabs = [$('tabChat'), $('tabAsk'), $('tabIntake'), $('tabInbox'), $('tabPeople'), $('tabResearch'), $('tabGraph')];
   function selectTab(t) {
     for (const x of tabs) { const on = x === t; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; }
     if (t === $('tabInbox')) loadInbox();
     if (t === $('tabChat')) loadChats();
     if (t === $('tabAsk')) { renderAskStatus(); $('askInput').focus(); }
+    if (t === $('tabPeople')) loadPeople();
+    if (t === $('tabResearch')) loadResearch();
     if (t === $('tabGraph')) graphShow(); else graphHide();
   }
   tabs.forEach((t, i) => {
@@ -912,6 +994,30 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   // ---------------------------------------------------------------- status
   let status = null;
   function chip(el, ic, text) { el.replaceChildren(icon(ic), text); }
+  async function lintPanel() {
+    if (!status || !status.vault.lint_errors) return;
+    let d; try { d = await api('/api/lint'); } catch (err) { return; }
+    const slot = h('div', { class: 'card stack', id: 'lintPanel' });
+    const result = h('div', { 'aria-live': 'assertive' });
+    slot.append(h('div', { class: 'card__header' }, h('div', { class: 'stack stack--tight' }, h('p', { class: 'eyebrow', text: 'Vault lint' }),
+        h('h2', { class: 'card__title', text: `${d.errors} problem${d.errors === 1 ? '' : 's'} in the vault` })),
+        h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: () => slot.remove() }, 'Close')),
+      h('pre', { class: 'pre-wrap mono meta', text: d.explained }),
+      h('div', { class: 'cluster cluster--end' }, h('button', { class: 'btn btn--primary', type: 'button', onclick: async (ev) => {
+        ev.currentTarget.setAttribute('aria-disabled', 'true');
+        try {
+          const r = await api('/api/lint/fix', { method: 'POST' });
+          const n = Object.keys(r.fixed).length;
+          result.replaceChildren(alertBox(r.remaining ? 'warning' : 'success', n ? `Repaired ${n} note${n === 1 ? '' : 's'}` + (r.commit ? ` (committed in ${r.commit})` : '') + '.' : 'Nothing could be repaired automatically.',
+            [Object.entries(r.fixed).map(([p, ch]) => `${p}: ${ch.join('; ')}`).join('\n'), r.remaining].filter(Boolean).join('\n\n')));
+          loadStatus();
+        } catch (err) { result.replaceChildren(alertBox('danger', err.message)); }
+      } }, 'Repair automatically')), result);
+    const old = $('lintPanel'); if (old) old.remove();
+    $('main').prepend(slot); slot.scrollIntoView({ block: 'nearest' });
+  }
+  $('chipVault').addEventListener('click', lintPanel);
+  $('chipVault').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); lintPanel(); } });
   async function loadStatus() {
     try { status = await api('/api/status'); } catch (e) {
       const keyless = !TOKEN || /no valid key/.test(e.message || '');
@@ -926,7 +1032,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     chip($('chipLocal'), L.up ? 'check' : 'danger', L.up ? 'Local model: ready' : 'Local model: Ollama not running');
     chip($('chipCloud'), 'lock', status.cloud.allowed ? 'Cloud: allowed for non-client material' : 'Cloud: locked');
     const v = status.vault;
-    if (v.lint_errors) chip($('chipVault'), 'danger', `Vault: ${v.lint_errors} lint error${v.lint_errors === 1 ? '' : 's'}`);
+    if (v.lint_errors) { chip($('chipVault'), 'danger', `Vault: ${v.lint_errors} lint error${v.lint_errors === 1 ? '' : 's'} · fix`); $('chipVault').classList.add('chip--action'); }
     else if (v.staged_changes) chip($('chipVault'), 'warn', 'Vault: changes staged; commit them first');
     else chip($('chipVault'), 'check', 'Vault: lint clean');
     $('inboxCount').textContent = v.inbox ? String(v.inbox) : '';
@@ -974,6 +1080,8 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   }
   ['input', 'change'].forEach((ev) => { $('pasteText').addEventListener(ev, updateProcess); $('sensChoices').addEventListener(ev, updateProcess); });
   const sens = () => (document.querySelector('input[name="sens"]:checked') || {}).value || '';
+  const mode = () => (document.querySelector('input[name="mode"]:checked') || {}).value || 'general';
+  $('modeChoices').addEventListener('change', () => { const r = mode() === 'research'; $('domainSel').disabled = r; if (r) $('domainSel').value = ''; updateProcess(); });
   function processProblem() {
     if (!status) return 'Waiting for the server.';
     if (!files.length && !$('pasteText').value.trim()) return 'Add a file or text, then choose a sensitivity.';
@@ -1001,7 +1109,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     if (pasted) items.push({ name: ($('pasteName').value.trim() || 'Pasted text') + '.md', body: new Blob([pasted], { type: 'text/markdown' }) });
     let last = null;
     for (const it of items) {
-      const q = new URLSearchParams({ name: it.name, sensitivity: sens(), domain: $('domainSel').value, provider });
+      const q = new URLSearchParams({ name: it.name, sensitivity: sens(), domain: mode() === 'research' ? '' : $('domainSel').value, provider, mode: mode() });
       if (provider === 'local') q.set('model', model); else if (model === 'deep') q.set('deep', '1');
       try { last = await api('/api/jobs?' + q, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: it.body }); }
       catch (err) { setAlert($('dropAlert'), 'danger', it.name + ': ' + err.message); }
@@ -1059,6 +1167,9 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
       j.source_summary ? h('div', { class: 'stack stack--tight' }, h('p', { class: 'section-label', text: 'What the source covers' }), h('p', { text: j.source_summary })) : null,
       (j.open_questions || []).length ? h('div', { class: 'stack stack--tight' }, h('p', { class: 'section-label', text: 'Open questions' }), h('ul', {}, j.open_questions.map((q) => h('li', { text: q })))) : null,
       j.state === 'failed' ? alertBox('danger', j.message) : null,
+      (j.people_unknown || []).length ? alertBox('warning', 'The source mentions people who are not in your People register: ' + j.people_unknown.join(', ') + '. Add them in People so their names become acronyms, or edit the names out before saving.') : null,
+      j.names_in_source ? alertBox('info', 'The source names people from your register. The drafts use their acronyms, but the original kept under _sources/ still has the names.') : null,
+      j.mode === 'research' && j.paper ? paperPanel(j) : null,
       j.state === 'saved' && j.saved ? alertBox('success', `Saved to the inbox in commit ${j.saved.commit}: ${j.saved.notes.length} notes, source in ${j.saved.source}.`) : null);
     root.appendChild(head);
     if (ACTIVE.has(j.state)) {
@@ -1076,12 +1187,28 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     root.appendChild(h('div', { class: 'savebar' }, count, saveBtn));
     updateSaveCount(j);
   }
+  const bibEdits = {};
+  function paperPanel(j) {
+    const P = j.paper; const ids = [P.doi ? 'DOI ' + P.doi : '', P.arxiv ? 'arXiv ' + P.arxiv : ''].filter(Boolean).join(' · ');
+    const box = h('div', { class: 'stack stack--tight' }, h('p', { class: 'section-label', text: 'Paper' }),
+      h('p', {}, h('strong', { text: P.title || 'Title not found' })),
+      h('p', { class: 'meta', text: [(P.authors || []).join(', '), P.year, P.venue].filter(Boolean).join(' · ') || 'Authors and year not found' }),
+      h('p', { class: 'meta mono', text: `citekey ${j.citekey}` + (ids ? ' · ' + ids : '') + ' · fields ' + (j.fields || []).join(', ') }));
+    if (j.paper_in_library) { box.appendChild(alertBox('info', `Already in your library as ${j.citekey}. The claims will link to its literature note.`)); return box; }
+    if (bibEdits[j.id] === undefined) bibEdits[j.id] = j.bibtex || '';
+    const ta = h('textarea', { class: 'textarea textarea--mono', id: 'bib-' + j.id, rows: '7', value: bibEdits[j.id] });
+    ta.addEventListener('input', () => { bibEdits[j.id] = ta.value; });
+    box.append(h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'bib-' + j.id, text: 'BibTeX for research/library.bib' }), ta,
+      h('span', { class: 'field__hint', text: 'Generated from the paper. Paste a corrected entry over it if you have one; its key is kept as ' + j.citekey + '.' })));
+    return box;
+  }
   function initEdits(j) {
     const E = edits[j.id] = edits[j.id] || {};
-    j.notes.forEach((n) => { if (!E[n.id]) E[n.id] = { id: n.id, include: !n.flags.some((f) => f.level === 'danger') && n.evidence.some((x) => x.verified), title: n.title, heading: n.heading, type: n.type, domain: n.domain, summary: n.summary, body: n.body, tags: n.tags.slice(), links: n.links.slice(), sensitivity: j.sensitivity }; });
+    j.notes.forEach((n) => { if (!E[n.id]) E[n.id] = { id: n.id, include: n.type === 'literature' ? n.include !== false && !n.flags.some((f) => f.level === 'danger') : !n.flags.some((f) => f.level === 'danger') && n.evidence.some((x) => x.verified), title: n.title, heading: n.heading, type: n.type, domain: n.domain, summary: n.summary, body: n.body, tags: n.tags.slice(), links: n.links.slice(), sensitivity: j.sensitivity }; });
     return E;
   }
-  const PREFIX = { principle: 'PRN', concept: 'CON', framework: 'FWK', checklist: 'CHK', source: 'SRC', synthesis: 'SYN', example: 'EX' };
+  const PREFIX = { principle: 'PRN', concept: 'CON', framework: 'FWK', checklist: 'CHK', source: 'SRC', synthesis: 'SYN', example: 'EX',
+    literature: 'LIT', claim: 'CLM', method: 'MTH', dataset: 'DS', question: 'RQ', hypothesis: 'HYP', notebook: 'NB' };
   const DPREFIX = { 'operational-maturity': 'OM', 'engagement-ora': 'ORA', 'energy-neso': 'NESO' };
   const prefixFor = (e) => DPREFIX[e.domain] || PREFIX[e.type] || '';
   function updateSaveCount(j) {
@@ -1107,9 +1234,9 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
       h('div', { class: 'field' }, h('label', { class: 'field__label', for: uid + '-h', text: 'Heading' }), bind('heading', h('input', { class: 'input', id: uid + '-h', value: e.heading, autocomplete: 'off' }))),
       h('div', { class: 'note-grid' },
         h('div', { class: 'field' }, h('label', { class: 'field__label', for: uid + '-ty', text: 'Type' }),
-          h('select', { class: 'select', id: uid + '-ty', onchange: (ev) => { e.type = ev.target.value; refreshPrefix(); } }, status.types.map((t) => h('option', { value: t, text: t, selected: t === e.type })))),
+          h('select', { class: 'select', id: uid + '-ty', onchange: (ev) => { e.type = ev.target.value; refreshPrefix(); } }, (j.mode === 'research' ? status.research_types : status.types).map((t) => h('option', { value: t, text: t, selected: t === e.type })))),
         h('div', { class: 'field' }, h('label', { class: 'field__label', for: uid + '-d', text: 'Domain' }),
-          h('select', { class: 'select', id: uid + '-d', onchange: (ev) => { e.domain = ev.target.value; refreshPrefix(); } }, status.domains.map((d) => h('option', { value: d, text: d, selected: d === e.domain })))),
+          h('select', { class: 'select', id: uid + '-d', disabled: j.mode === 'research', onchange: (ev) => { e.domain = ev.target.value; refreshPrefix(); } }, (j.mode === 'research' ? ['research'] : status.domains.filter((d) => d !== 'research')).map((d) => h('option', { value: d, text: d, selected: d === e.domain })))),
         h('div', { class: 'field' }, h('label', { class: 'field__label', for: uid + '-s', text: 'Sensitivity' }),
           h('select', { class: 'select', id: uid + '-s', onchange: (ev) => { e.sensitivity = ev.target.value; } }, sensOpts.map((s) => h('option', { value: s, text: s, selected: s === e.sensitivity }))))),
       h('div', { class: 'field' }, h('div', { class: 'cluster cluster--between' }, h('label', { class: 'field__label', for: uid + '-su', text: 'Summary' }), sumCount),
@@ -1136,22 +1263,204 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     const notes = Object.values(edits[j.id]);
     if (!notes.some((n) => n.include)) { setAlert(slot, 'warning', 'Select at least one note.'); return; }
     setAlert(slot, 'info', 'Saving and committing. If commits are signed, your key may ask for a passphrase.');
-    try { await api(`/api/jobs/${encodeURIComponent(j.id)}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes }) }); after(); loadStatus(); }
+    const body = { notes }; if (j.mode === 'research' && bibEdits[j.id] !== undefined) body.bibtex = bibEdits[j.id];
+    try { await api(`/api/jobs/${encodeURIComponent(j.id)}/save`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); after(); loadStatus(); }
     catch (err) { setAlert(slot, 'danger', err.message); }
   }
 
+  // ---------------------------------------------------------------- people
+  let people = null, personSel = null;
+  const pref = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (_) { return null; } return null; };
+  $('pHideNames').checked = pref('brain-intake-hide-names') === '1';
+  $('pHideNames').addEventListener('change', () => { pref('brain-intake-hide-names', $('pHideNames').checked ? '1' : '0'); renderPeople(); if (personSel) showPerson(personSel); });
+  const shownName = (n) => ($('pHideNames').checked ? '•••' : n);
+  async function loadPeople() {
+    try { people = await api('/api/people'); } catch (err) { setAlert($('peopleAlert'), 'danger', err.message); return; }
+    if (!$('pContexts').children.length && people.contexts) {
+      for (const c of people.contexts) $('pContexts').appendChild(h('label', { class: 'check' }, h('input', { type: 'checkbox', value: c }), c));
+    }
+    renderPeople();
+  }
+  function renderPeople() {
+    const wrap = $('peopleTable'); wrap.replaceChildren();
+    if (!people) return;
+    if (!people.ready) { wrap.appendChild(alertBox('warning', 'There is no people store yet. Restart Brain Intake with bin/brain-intake up, which creates it.')); return; }
+    (people.problems || []).forEach((p) => wrap.appendChild(alertBox('warning', p)));
+    if (!people.people.length) { wrap.appendChild(h('div', { class: 'empty' }, h('p', { text: 'No one yet. Add a person below.' }))); return; }
+    const rows = people.people.map((r) => h('tr', { class: r.acronym === personSel ? 'is-current' : '' },
+      h('td', {}, h('button', { class: 'btn btn--sm', type: 'button', disabled: r.status === 'erased', onclick: () => showPerson(r.acronym) }, r.acronym)),
+      h('td', {}, h('div', { text: r.status === 'erased' ? '(erased)' : shownName(r.name) }), h('div', { class: 'meta', text: r.how || '' })),
+      h('td', {}, h('div', { class: 'meta', text: (r.contexts || []).join(', ') }), r.status !== 'active' ? badge('neutral', r.status) : null),
+      h('td', { class: 'mono meta', text: r.entries ? `${r.entries} · ${r.last}` : '—' })));
+    wrap.appendChild(h('table', {}, h('thead', {}, h('tr', {}, ['Acronym', 'Name', 'Context', 'Entries · last'].map((t) => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)));
+  }
+  let suggestTimer = null, acrTouched = false;
+  $('pAcr').addEventListener('input', () => { acrTouched = !!$('pAcr').value.trim(); });
+  $('pName').addEventListener('input', () => {
+    clearTimeout(suggestTimer);
+    suggestTimer = setTimeout(async () => {
+      if (acrTouched) return;
+      const nm = $('pName').value.trim(); if (!nm) { $('pAcr').value = ''; return; }
+      try { const r = await api('/api/people/suggest?name=' + encodeURIComponent(nm)); if (!acrTouched) $('pAcr').value = r.acronym || ''; } catch (_) { /* offline: type it */ }
+    }, 250);
+  });
+  $('personForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = { name: $('pName').value.trim(), acronym: $('pAcr').value.trim().toUpperCase(), how: $('pHow').value.trim(), since: $('pSince').value.trim(),
+      contexts: Array.from($('pContexts').querySelectorAll('input:checked')).map((x) => x.value) };
+    if (!body.name) { setAlert($('personAlert'), 'warning', 'Enter the full name.'); return; }
+    setAlert($('personAlert'), 'info', 'Adding and committing to the people store.');
+    try {
+      const r = await api('/api/people', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      setAlert($('personAlert'), 'success', `Added as ${r.acronym} in commit ${r.commit}.`);
+      $('personForm').reset(); acrTouched = false; await loadPeople(); showPerson(r.acronym);
+    } catch (err) { setAlert($('personAlert'), 'danger', err.message); }
+  });
+  async function showPerson(acr) {
+    personSel = acr; renderPeople();
+    const root = $('personView'); let v;
+    try { v = await api('/api/people/' + encodeURIComponent(acr)); } catch (err) { root.replaceChildren(alertBox('danger', err.message)); return; }
+    const alertSlot = h('div', { 'aria-live': 'assertive' });
+    const prof = h('textarea', { class: 'textarea', id: 'pProfile', rows: '5', value: v.profile });
+    const types = (people && people.types) || ['observation', 'communication', 'meeting', 'note', 'correction'];
+    const typeSel = h('select', { class: 'select', id: 'eType' }, types.map((t) => h('option', { value: t, text: t, selected: t === 'observation' })));
+    const chanSel = h('select', { class: 'select', id: 'eChan' }, ((people && people.channels) || []).map((c) => h('option', { value: c, text: c })));
+    const chanField = h('div', { class: 'field', hidden: true }, h('label', { class: 'field__label', for: 'eChan', text: 'Channel' }), chanSel);
+    typeSel.addEventListener('change', () => { chanField.hidden = typeSel.value !== 'communication'; });
+    const dateIn = h('input', { class: 'input mono', id: 'eDate', type: 'date', value: new Date().toISOString().slice(0, 10) });
+    const textIn = h('textarea', { class: 'textarea', id: 'eText', rows: '4', placeholder: `What happened, what was said, what matters. Refer to others by acronym.` });
+    const log = h('ol', { class: 'stack stack--tight timeline' }, v.entries.slice().reverse().map((x) => h('li', { class: 'card stack stack--tight' },
+      h('div', { class: 'cluster' }, h('span', { class: 'mono meta', text: x.date }), badge(x.type === 'correction' ? 'warning' : 'neutral', x.type), x.channel ? h('span', { class: 'meta', text: x.channel }) : null),
+      h('p', { class: 'pre-wrap', text: x.text }))));
+    const archiveBtn = v.status === 'erased' ? null : h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: async () => {
+      try { await api(`/api/people/${acr}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: v.status === 'archived' ? 'active' : 'archived' }) }); await loadPeople(); showPerson(acr); }
+      catch (err) { setAlert(alertSlot, 'danger', err.message); } } }, v.status === 'archived' ? 'Mark active' : 'Archive');
+    root.replaceChildren(
+      h('div', { class: 'card stack' },
+        h('div', { class: 'card__header' }, h('div', { class: 'stack stack--tight' }, h('p', { class: 'eyebrow', text: 'Person' }),
+          h('h2', { class: 'card__title', text: `${acr} · ${shownName(v.name)}` }), h('p', { class: 'meta', text: [v.how, v.since ? 'since ' + v.since : '', v.status].filter(Boolean).join(' · ') })), archiveBtn),
+        h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'pProfile', text: 'Profile (editable)' }), prof,
+          h('span', { class: 'field__hint', text: 'Your current understanding. Record what happened and was said, not diagnoses or judgements.' })),
+        h('div', { class: 'cluster cluster--end' }, h('button', { class: 'btn btn--sm', type: 'button', onclick: async () => {
+          try { const r = await api(`/api/people/${acr}/profile`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: prof.value }) }); setAlert(alertSlot, 'success', `Profile saved in commit ${r.commit}.`); }
+          catch (err) { setAlert(alertSlot, 'danger', err.message); } } }, 'Save profile')),
+        alertSlot),
+      h('form', { class: 'card stack', novalidate: true, onsubmit: async (ev) => {
+          ev.preventDefault();
+          if (!textIn.value.trim()) { setAlert(alertSlot, 'warning', 'Write the entry first.'); return; }
+          const body = { date: dateIn.value, type: typeSel.value, channel: typeSel.value === 'communication' ? chanSel.value : '', text: textIn.value };
+          try { const r = await api(`/api/people/${acr}/entries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); await loadPeople(); await showPerson(acr); setAlert(document.querySelector('#personView [aria-live]'), 'success', `Logged in commit ${r.commit}.`); }
+          catch (err) { setAlert(alertSlot, 'danger', err.message); }
+        } },
+        h('div', { class: 'stack stack--tight' }, h('p', { class: 'eyebrow', text: 'Log' }), h('h2', { class: 'card__title', text: 'Add an entry' })),
+        h('div', { class: 'grid' }, h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'eDate', text: 'Date' }), dateIn),
+          h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'eType', text: 'Type' }), typeSel), chanField),
+        h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'eText', text: 'Entry' }), textIn,
+          h('span', { class: 'field__hint', text: 'Entries are locked once saved. To fix one, add a correction.' })),
+        h('div', { class: 'cluster cluster--end' }, h('button', { class: 'btn btn--primary', type: 'submit' }, 'Add to log'))),
+      h('section', { class: 'stack', 'aria-label': 'History' }, v.entries.length ? log : h('div', { class: 'empty' }, h('p', { text: 'No entries yet.' }))));
+  }
+
+  // ---------------------------------------------------------------- research
+  let research = null, nbSel = null;
+  $('refreshResearch').addEventListener('click', () => loadResearch());
+  async function loadResearch() {
+    try { research = await api('/api/research'); } catch (err) { setAlert($('researchAlert'), 'danger', err.message); return; }
+    if (!$('nbFields').children.length) for (const f of research.fields) $('nbFields').appendChild(h('label', { class: 'check' }, h('input', { type: 'checkbox', value: f }), f));
+    const wrap = $('libTable'); wrap.replaceChildren();
+    if (!research.papers.length) wrap.appendChild(h('div', { class: 'empty' }, h('p', { text: 'The library is empty. Drop a paper in Files with Research paper chosen.' })));
+    else wrap.appendChild(h('table', {}, h('thead', {}, h('tr', {}, ['Paper', 'Year', 'Note'].map((t) => h('th', { scope: 'col', text: t })))),
+      h('tbody', {}, research.papers.map((p) => h('tr', {},
+        h('td', {}, h('div', { text: p.title || p.key }), h('div', { class: 'meta', text: p.authors }), h('div', { class: 'meta mono', text: [p.key, p.doi ? 'doi ' + p.doi : '', p.arxiv ? 'arXiv ' + p.arxiv : ''].filter(Boolean).join(' · ') })),
+        h('td', { class: 'mono', text: p.year }),
+        h('td', {}, p.note ? h('a', { class: 'btn btn--sm', href: obsidianLink(p.note) }, 'Open') : h('span', { class: 'meta', text: 'in the inbox or not saved' })))))));
+    renderNotebooks();
+  }
+  function renderNotebooks() {
+    const root = $('notebooks'); root.replaceChildren();
+    if (!research.notebooks.length) { root.appendChild(h('div', { class: 'empty' }, h('p', { text: 'No notebooks yet. Start one on the left.' }))); return; }
+    for (const nb of research.notebooks) {
+      const open = nb.path === nbSel;
+      const card = h('article', { class: 'card stack' },
+        h('div', { class: 'card__header' }, h('div', { class: 'stack stack--tight' }, h('p', { class: 'eyebrow', text: 'Notebook · ' + nb.sensitivity }), h('h2', { class: 'card__title', text: nb.title }),
+          h('p', { class: 'meta mono', text: nb.entries ? `${nb.entries} entries · last ${nb.last}` : 'no entries yet' })),
+          h('div', { class: 'cluster' }, h('a', { class: 'btn btn--sm btn--ghost', href: obsidianLink(nb.path) }, 'Open in Obsidian'),
+            h('button', { class: 'btn btn--sm', type: 'button', onclick: () => { nbSel = open ? null : nb.path; renderNotebooks(); } }, open ? 'Close' : 'Add entry'))),
+        nb.recent.length ? h('ol', { class: 'stack stack--tight' }, nb.recent.map((x) => h('li', {}, h('span', { class: 'mono meta', text: x.date + ' ' }), badge(x.type === 'correction' ? 'warning' : 'neutral', x.type), ' ', h('span', { class: 'pre-wrap', text: x.text })))) : null);
+      if (open) {
+        const slot = h('div', { 'aria-live': 'assertive' });
+        const d = h('input', { class: 'input mono', type: 'date', id: 'nbDate', value: new Date().toISOString().slice(0, 10) });
+        const t = h('select', { class: 'select', id: 'nbType' }, research.types.map((x) => h('option', { value: x, text: x, selected: x === 'run' })));
+        const tx = h('textarea', { class: 'textarea textarea--mono', id: 'nbText', rows: '5', placeholder: 'Setup, run, result (figures exactly), or decision.' });
+        card.appendChild(h('form', { class: 'stack', novalidate: true, onsubmit: async (ev) => {
+            ev.preventDefault();
+            try { const r = await api('/api/research/notebooks/entries', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: nb.path, date: d.value, type: t.value, text: tx.value }) });
+              await loadResearch(); setAlert($('researchAlert'), 'success', `Logged in commit ${r.commit}.`); }
+            catch (err) { setAlert(slot, 'danger', err.message); }
+          } },
+          h('div', { class: 'grid' }, h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'nbDate', text: 'Date' }), d), h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'nbType', text: 'Type' }), t)),
+          h('div', { class: 'field' }, h('label', { class: 'field__label', for: 'nbText', text: 'Entry' }), tx, h('span', { class: 'field__hint', text: 'Locked once saved. Indent continuation lines are kept.' })),
+          h('div', { class: 'cluster cluster--end' }, h('button', { class: 'btn btn--primary', type: 'submit' }, 'Add to notebook')), slot));
+      }
+      root.appendChild(card);
+    }
+  }
+  $('nbForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = { project: $('nbProject').value.trim(), aim: $('nbAim').value.trim(), sensitivity: $('nbSens').value,
+      fields: Array.from($('nbFields').querySelectorAll('input:checked')).map((x) => x.value) };
+    if (!body.project) { setAlert($('nbAlert'), 'warning', 'Name the project.'); return; }
+    try { const r = await api('/api/research/notebooks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      setAlert($('nbAlert'), 'success', `Started ${r.path.split('/').pop().replace(/\.md$/, '')} in commit ${r.commit}.`); $('nbForm').reset(); nbSel = r.path; loadResearch(); }
+    catch (err) { setAlert($('nbAlert'), 'danger', err.message); }
+  });
+
   // ---------------------------------------------------------------- inbox
+  const picked = new Set();
+  let inboxItems = [], bulkBusy = false;
+  const promotable = (it) => !(it.plan || {}).error && it.tracked;
+  function updateBulk() {
+    for (const n of Array.from(picked)) if (!inboxItems.some((it) => it.name === n && promotable(it))) picked.delete(n);
+    const eligible = inboxItems.filter(promotable).length;
+    $('inboxBulk').hidden = !eligible;
+    $('bulkCount').textContent = `${picked.size} of ${eligible} selected`;
+    $('bulkPromote').setAttribute('aria-disabled', picked.size && !bulkBusy ? 'false' : 'true');
+    $('bulkPromote').textContent = picked.size ? `Promote ${picked.size} selected` : 'Promote selected';
+    const all = $('pickAll'); if (all) { all.checked = eligible > 0 && picked.size === eligible; all.indeterminate = picked.size > 0 && picked.size < eligible; }
+  }
+  $('bulkClear').addEventListener('click', () => { picked.clear(); document.querySelectorAll('#inboxTable input[data-pick]').forEach((c) => { c.checked = false; }); updateBulk(); });
+  $('bulkPromote').addEventListener('click', async () => {
+    if (bulkBusy || !picked.size) return;
+    bulkBusy = true; updateBulk();
+    const names = inboxItems.filter((it) => picked.has(it.name)).map((it) => it.name), st = $('bulkStatus').value;
+    const done = [], failed = [];
+    for (const [i, name] of names.entries()) {
+      setAlert($('inboxAlert'), 'info', `Promoting ${i + 1} of ${names.length} through the vault gate: ${name.replace(/\.md$/, '')}`);
+      try { const r = await api('/api/inbox/promote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, status: st }) }); done.push(r); picked.delete(name); }
+      catch (err) { failed.push([name.replace(/\.md$/, ''), err.message]); }
+    }
+    bulkBusy = false;
+    const slot = $('inboxAlert'); slot.replaceChildren();
+    if (done.length) slot.appendChild(alertBox('success', `Promoted ${done.length} of ${names.length}, each in its own commit with its hub link.`));
+    if (failed.length) slot.appendChild(alertBox('danger', `${failed.length} not promoted; they are still in the inbox, unchanged.`, failed.map(([n, m]) => `${n}: ${m}`).join('\n')));
+    await loadInbox(); loadStatus();
+  });
   async function loadInbox() {
     const wrap = $('inboxTable');
     let items;
     try { items = await api('/api/inbox'); } catch (err) { setAlert($('inboxAlert'), 'danger', err.message); return; }
+    inboxItems = items;
     wrap.replaceChildren();
-    if (!items.length) { wrap.appendChild(h('div', { class: 'empty' }, icon('inbox'), h('p', { text: 'The inbox is empty.' }))); return; }
+    if (!items.length) { updateBulk(); wrap.appendChild(h('div', { class: 'empty' }, icon('inbox'), h('p', { text: 'The inbox is empty.' }))); return; }
     const rows = items.map((it) => {
       const statusSel = h('select', { class: 'select', 'aria-label': 'Status after promotion for ' + it.title },
         [['evergreen', 'Evergreen'], ['observed', 'Observed'], ['draft', 'Keep as draft']].map(([v, t]) => h('option', { value: v, text: t })));
       const plan = it.plan || {};
+      const pick = h('input', { type: 'checkbox', 'data-pick': '1', checked: picked.has(it.name), disabled: !promotable(it), 'aria-label': 'Select ' + it.title,
+        title: promotable(it) ? null : (plan.error || 'Commit this note first'),
+        onchange: (ev) => { if (ev.target.checked) picked.add(it.name); else picked.delete(it.name); updateBulk(); } });
       return h('tr', {},
+        h('td', { class: 'pick' }, pick),
         h('td', {}, h('div', { class: 'title', text: it.title }), h('div', { class: 'meta', text: it.summary || 'No summary' })),
         h('td', {}, h('div', { class: 'mono', text: it.type }), h('div', { class: 'meta mono', text: it.domain })),
         h('td', {}, badge('neutral', it.sensitivity || 'unset'), ' ', it.confidence ? h('span', { class: 'meta', text: 'confidence ' + it.confidence }) : null),
@@ -1162,7 +1471,11 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
           h('button', { class: 'btn btn--sm btn--primary', type: 'button', disabled: !!plan.error || !it.tracked, title: it.tracked ? null : 'Commit this note first', onclick: () => promote(it.name, statusSel.value) }, 'Promote'),
           h('button', { class: 'btn btn--sm btn--danger', type: 'button', onclick: () => archive(it.name) }, 'Archive'))));
     });
-    wrap.appendChild(h('table', {}, h('thead', {}, h('tr', {}, ['Note', 'Type and domain', 'Sensitivity', 'Destination', 'Action'].map((t) => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)));
+    const pickAll = h('input', { type: 'checkbox', id: 'pickAll', 'aria-label': 'Select every note that can be promoted',
+      onchange: (ev) => { for (const it of items) if (promotable(it)) { if (ev.target.checked) picked.add(it.name); else picked.delete(it.name); }
+        document.querySelectorAll('#inboxTable input[data-pick]').forEach((c) => { if (!c.disabled) c.checked = ev.target.checked; }); updateBulk(); } });
+    wrap.appendChild(h('table', {}, h('thead', {}, h('tr', {}, h('th', { scope: 'col', class: 'pick' }, pickAll), ['Note', 'Type and domain', 'Sensitivity', 'Destination', 'Action'].map((t) => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)));
+    updateBulk();
   }
   let returnFocus = null;
   async function preview(name, from) {
@@ -1390,7 +1703,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     setAlert($('graphAlert'), null, '');
     try {
       if (typeof d3 === 'undefined' || !d3.forceSimulation) throw new Error('The layout engine did not load. Reload the page.');
-      const data = await api('/api/graph');
+      const data = await api('/api/graph' + ($('gPeople').checked ? '?people=1' : ''));
       if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error('The graph data was not readable.');
       G.data = data;
       G.byId = new Map(data.nodes.map((n) => [n.id, n]));
@@ -1462,7 +1775,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   function baseIds() {
     const dom = $('gDomain').value, typ = $('gType').value, inbox = $('gInbox').checked, client = $('gClient').checked;
     return G.data.nodes.filter((n) => (!dom || n.domain === dom) && (!typ || n.type === typ) && (inbox || !n.inbox)
-      && (client || isOpen(n) || n.sensitivity === 'personal') && (!G.cutoff || !n.created || String(n.created).slice(0, 10) <= G.cutoff)).map((n) => n.id);
+      && (client || isOpen(n) || n.sensitivity === 'personal' || n.sensitivity === 'people') && (!G.cutoff || !n.created || String(n.created).slice(0, 10) <= G.cutoff)).map((n) => n.id);
   }
   function visibleIds() {
     let ids = baseIds(); const allowed = new Set(ids);
@@ -1744,6 +2057,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     G.userMoved = false; rebuild(); renderPanel();
   }));
   ['gHealth', 'gLabels'].forEach((id) => $(id).addEventListener('change', () => { renderLegend(); requestDraw(); }));
+  $('gPeople').addEventListener('change', () => { G.userMoved = false; loadGraph(); });
   $('gFit').addEventListener('click', () => fit(false));
   $('gRefresh').addEventListener('click', loadGraph);
   function updateRangeLabel() {
@@ -1867,17 +2181,17 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
           h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: () => openInGraph(r.path) }, 'Show in graph'))));
     }
   }
-  const askParams = () => ({ client: $('askClient').checked, inbox: $('askInbox').checked });
+  const askParams = () => ({ client: $('askClient').checked, inbox: $('askInbox').checked, people: $('askPeople').checked });
   let typeTimer = null, answered = null;           // answered: the results list the current answer cites
   $('askInput').addEventListener('input', () => { clearTimeout(typeTimer); typeTimer = setTimeout(liveSearch, 250); });
-  ['askClient', 'askInbox'].forEach((id) => $(id).addEventListener('change', liveSearch));
+  ['askClient', 'askInbox', 'askPeople'].forEach((id) => $(id).addEventListener('change', liveSearch));
   async function liveSearch() {
     if (askAbort) return;                                          // an answer is streaming; its sources stay on screen
     const q = $('askInput').value.trim(); const seq = ++askSeq;
     if (!q) { renderAskResults([], ''); return; }
     const p = askParams();
     try {
-      const d = await api(`/api/search?q=${encodeURIComponent(q)}&client=${p.client ? 1 : 0}&inbox=${p.inbox ? 1 : 0}`);
+      const d = await api(`/api/search?q=${encodeURIComponent(q)}&client=${p.client ? 1 : 0}&inbox=${p.inbox ? 1 : 0}&people=${p.people ? 1 : 0}`);
       if (seq !== askSeq || askAbort) return;                      // a newer keystroke or an answer won
       renderAskResults(d.results, searchMeta(d));
       if (answered) $('askAnswer').classList.add('is-stale');

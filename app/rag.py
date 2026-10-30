@@ -173,6 +173,7 @@ class Index:
             new, changed = {}, False
             for p, r in b.walk():
                 if r in b.GENERATED or os.path.basename(r) in b.EXEMPT_NAMES: continue
+                if r == f'{b.PEOPLE}/{b.REGISTER}': continue          # the only note with real names is never indexed
                 try: sig = self._sig(p)
                 except OSError: continue
                 prev = old.get(r)
@@ -197,7 +198,8 @@ class Index:
         title = one(s(fm.get('title')) or os.path.basename(r)[:-3], 200)
         sens = one(s(fm.get('sensitivity')), 20).lower()
         meta = {'path': r, 'title': title, 'type': one(s(fm.get('type')), 40), 'domain': one(s(fm.get('domain')), 60),
-                'sensitivity': sens if sens in ('internal', 'personal', 'client') else 'unlabelled',
+                'sensitivity': sens if sens in ('internal', 'personal', 'client', 'people') else 'unlabelled',
+                'people': r.startswith(b.PEOPLE + '/') or sens == 'people',
                 'inbox': r.startswith(b.INBOX), 'status': one(s(fm.get('status')), 40), 'updated': one(s(fm.get('updated')), 10)}
         summary = one(s(fm.get('summary')), 400)
         pieces = []
@@ -387,13 +389,14 @@ class Index:
 
     # ---------------------------------------------------------------- search
     @staticmethod
-    def allowed(c, include_client, include_inbox):
+    def allowed(c, include_client, include_inbox, include_people=False):
         meta = c['meta']
         if meta['inbox'] and not include_inbox: return False
+        if meta.get('people') and not include_people: return False         # its own tick; client does not cover it
         if meta['sensitivity'] in ('client', 'unlabelled') and not include_client: return False
         return True
 
-    def search(self, q, include_client=False, include_inbox=False, k=8, use_vectors=True):
+    def search(self, q, include_client=False, include_inbox=False, k=8, use_vectors=True, include_people=False):
         t0 = time.time()
         self.refresh()
         qt = tokens(q)
@@ -401,7 +404,7 @@ class Index:
         with self.lock:
             snap, links = self.snap, self.links
             matrix, mhashes = self._dense_matrix(snap) if qv is not None else (None, [])
-        allowed = [c for c in snap.chunks if self.allowed(c, include_client, include_inbox)]
+        allowed = [c for c in snap.chunks if self.allowed(c, include_client, include_inbox, include_people)]
         n, k1, bb = len(snap.chunks) or 1, 1.5, 0.75
         bm = []
         if qt:

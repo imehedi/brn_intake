@@ -55,10 +55,13 @@ signing_key() {
   # Keys are added, never replaced, so commits signed by an earlier key keep verifying.
   line=$(printf 'brain-intake@localhost namespaces="git" %s' "$(cut -d' ' -f1,2 "$k.pub")")
   grep -qxF "$line" "$STATE/signing/allowed_signers" 2>/dev/null || printf '%s\n' "$line" >> "$STATE/signing/allowed_signers"
-  # Let the Mac's git verify these signatures too. This touches only the vault's own .git/config.
+  # Let the Mac's git verify these signatures too, in the vault and in the people store. Local config only.
   want="$STATE/signing/allowed_signers"
-  [ "$(git -C "$VAULT" config --local --get gpg.ssh.allowedSignersFile 2>/dev/null || true)" = "$want" ] ||
-    git -C "$VAULT" config --local gpg.ssh.allowedSignersFile "$want"
+  for repo in "$VAULT" "$VAULT/people"; do
+    [ -d "$repo/.git" ] || continue
+    [ "$(git -C "$repo" config --local --get gpg.ssh.allowedSignersFile 2>/dev/null || true)" = "$want" ] ||
+      git -C "$repo" config --local gpg.ssh.allowedSignersFile "$want"
+  done
 }
 
 prepare() {
@@ -70,8 +73,18 @@ prepare() {
   BRAIN_GIT_AUTOCRLF=$(git -C "$VAULT" config --get core.autocrlf || echo false)
   tz=$(readlink /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##')
   if [ -z "$tz" ] || [ ! -f "/usr/share/zoneinfo/$tz" ]; then note "could not read the Mac's time zone; using Europe/London"; tz=Europe/London; fi
+  # The people store: its own repository inside the vault. Created empty the first time, by the vault's own tool.
+  if [ ! -d "$VAULT/people/.git" ]; then
+    py=""
+    for c in "${BRAIN_PYTHON:-}" /Library/Frameworks/Python.framework/Versions/Current/bin/python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+      [ -n "$c" ] && "$c" -c 'import yaml' >/dev/null 2>&1 && { py=$c; break; }
+    done
+    [ -n "$py" ] || die "creating the people store needs a python3 with PyYAML; set BRAIN_PYTHON."
+    "$py" "$VAULT/_system/scripts/brain.py" people-init || die "could not create the people store."
+  fi
+  grep -qx 'people/' "$VAULT/.gitignore" 2>/dev/null || die "the vault's .gitignore must list people/ (its own repository)."
   # Read-only overlays in compose.yaml need these to exist.
-  mkdir -p "$VAULT/.git/hooks" "$VAULT/.obsidian"
+  mkdir -p "$VAULT/.git/hooks" "$VAULT/.obsidian" "$VAULT/people/.git/hooks"
   for p in .git/config _system/hooks _system/scripts; do [ -e "$VAULT/$p" ] || die "the vault has no $p"; done
   mkdir -p "$STATE" "$STATE/tmp" && chmod 700 "$STATE"
   find "$STATE/tmp" -mindepth 1 -maxdepth 1 -mmin +60 -exec rm -rf {} + 2>/dev/null || true   # left by a hard stop

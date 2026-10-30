@@ -39,6 +39,7 @@ CFG = json.load(open(os.path.join(HERE, 'config.json'), encoding='utf-8'))
 if IN_CONTAINER and os.environ.get('OLLAMA_URL'):
     CFG['local']['url'] = os.environ['OLLAMA_URL']       # the relay to Ollama on the Mac; checked in main()
 PROMPT = open(os.path.join(HERE, 'prompts', 'extract.txt'), encoding='utf-8').read()
+RESEARCH_PROMPT = open(os.path.join(HERE, 'prompts', 'extract-research.txt'), encoding='utf-8').read()
 WORK = os.path.abspath(os.environ.get('BRAIN_STATE') or os.path.join(HERE, '..', 'state'))   # jobs, chats, vectors
 INBOX = os.path.join(VAULT, '00 Inbox')
 SOURCES = '_sources'
@@ -70,19 +71,27 @@ JOBS, JOBS_LOCK, QUEUE = {}, threading.Lock(), queue.Queue()
 
 EXTRACT_TYPES = ['principle', 'concept', 'framework', 'checklist', 'example', 'source', 'synthesis',
                  'observation', 'reference', 'knowledge', 'playbook', 'decision-log', 'quotes']
-DOMAINS = sorted(d for d in brain.DOMAINS if d != 'system')
-SENSITIVITIES = ['internal', 'personal', 'client']
-RANK = {'internal': 0, 'personal': 1, 'client': 2}
+RESEARCH_TYPES = ['literature', 'claim', 'method', 'dataset', 'question']
+ALL_TYPES = EXTRACT_TYPES + RESEARCH_TYPES
+DOMAINS = sorted(d for d in brain.DOMAINS if d not in ('system', 'people'))   # people go through the People tab only
+SENSITIVITIES = ['internal', 'personal', 'client']          # offered for files and chats
+RANK = {'internal': 0, 'personal': 1, 'client': 2, 'people': 3}
+PEOPLE_STORE = os.path.join(VAULT, brain.PEOPLE)
 PREFIX = {'principle': 'PRN', 'concept': 'CON', 'framework': 'FWK', 'checklist': 'CHK', 'template': 'TPL',
-          'source': 'SRC', 'synthesis': 'SYN', 'engagement': 'ENG', 'example': 'EX', 'review': 'REV'}
+          'source': 'SRC', 'synthesis': 'SYN', 'engagement': 'ENG', 'example': 'EX', 'review': 'REV',
+          **brain.RESEARCH_PREFIX}
 DOMAIN_PREFIX = {'operational-maturity': 'OM', 'engagement-ora': 'ORA', 'energy-neso': 'NESO'}
 MOC_SUB = {'source': '01 Sources', 'synthesis': '01 Sources', 'principle': '02 Principles',
            'concept': '03 Concepts', 'framework': '04 Frameworks', 'checklist': '05 Checklists',
            'template': '06 Templates', 'engagement': '07 Engagement', 'example': '08 Examples',
-           'review': '09 Review'}
+           'review': '09 Review', 'literature': 'papers', 'claim': 'claims', 'method': 'methods',
+           'dataset': 'datasets', 'question': 'questions', 'hypothesis': 'questions', 'notebook': 'notebooks'}
 MOC_SECTION = {'source': '## Sources', 'synthesis': '## Sources', 'principle': '## Principles',
                'concept': '## Concepts', 'framework': '## Frameworks', 'checklist': '## Checklists',
-               'template': '## Templates', 'engagement': '## Engagement', 'example': '## Examples'}
+               'template': '## Templates', 'engagement': '## Engagement', 'example': '## Examples',
+               'literature': '## Papers', 'claim': '## Claims', 'method': '## Methods', 'dataset': '## Datasets',
+               'question': '## Questions and hypotheses', 'hypothesis': '## Questions and hypotheses',
+               'notebook': '## Notebooks'}
 # domain -> (folder, hub, section heading or None, hub style)
 HOME = {
     'ops-resilience': ('ops-resilience', 'ops-resilience/00 MOC - Operational Resilience Assessment.md', None, 'moc'),
@@ -95,6 +104,7 @@ HOME = {
     'work': ('work/MHCG', 'work/MHCG/MHCG index.md', None, 'list'),
     'observations': ('observations/git', 'observations/git/index.md', None, 'list'),
     'dev-preferences': ('dev-preferences', 'dev-preferences/README.md', None, 'list'),
+    'research': ('research', 'research/00 MOC - Research.md', None, 'moc'),
 }
 FALLBACK_SECTION = '## Added through intake'
 
@@ -120,6 +130,26 @@ SCHEMA = {
                          'evidence', 'confidence']}},
         'open_questions': {'type': 'array', 'items': {'type': 'string'}}},
     'required': ['source_summary', 'notes', 'open_questions']}
+
+
+def job_schema(job):
+    """The JSON shape the model must return. Research mode adds the paper's details; the general mode
+    asks which people the source mentions, so registered names can become acronyms."""
+    s = json.loads(json.dumps(SCHEMA))
+    note = s['properties']['notes']['items']['properties']
+    if job.get('mode') == 'research':
+        note['type']['enum'] = RESEARCH_TYPES
+        note['domain']['enum'] = ['research']
+        s['properties']['paper'] = {'type': 'object', 'properties': {k: {'type': 'string'} for k in ('title', 'year', 'venue', 'doi', 'arxiv')},
+                                    'required': ['title', 'year', 'venue', 'doi', 'arxiv']}
+        s['properties']['paper']['properties']['authors'] = {'type': 'array', 'items': {'type': 'string'}}
+        s['properties']['paper']['required'].append('authors')
+        s['properties']['fields'] = {'type': 'array', 'items': {'type': 'string', 'enum': sorted(brain.FIELDS)}}
+        s['required'] += ['paper', 'fields']
+    else:
+        s['properties']['people_mentioned'] = {'type': 'array', 'items': {'type': 'string'}}
+        s['required'].append('people_mentioned')
+    return s
 
 
 class Refused(Exception):
@@ -440,8 +470,8 @@ def keychain(service, env):
 def boundary_check(job):
     """The data boundary, enforced here and nowhere else."""
     if job['provider'] == 'local': return
-    if job['sensitivity'] == 'client':
-        raise Refused('Client material is processed by the local model only.')
+    if job['sensitivity'] in ('client', 'people'):
+        raise Refused('Client and people material is processed by the local model only.')
     if not CFG.get('allow_cloud'):
         raise Refused('Cloud processing is locked: allow_cloud is false in config.json.')
 
@@ -459,7 +489,16 @@ def user_message(job, chunk, i, n, titles):
                    + '\n---\n'.join(job['context']) + f'\n{cfence}')
     kind = (f'Source: a chat message sent to the vault ({job["name"]}).' if job.get('chat')
             else f'Source file: {job["name"]}. This is chunk {i} of {n}.')
-    return (f'Allowed types: {", ".join(EXTRACT_TYPES)}.\nAllowed domains: {", ".join(DOMAINS)}.\n{hint}\n'
+    research = job.get('mode') == 'research'
+    types, domains = (RESEARCH_TYPES, ['research']) if research else (EXTRACT_TYPES, DOMAINS)
+    if research:
+        hint = (f'Allowed fields: {", ".join(sorted(brain.FIELDS))}.\n'
+                + ('Identifiers found in the source text: ' + json.dumps(job.get('ids') or {}) + '.\n' if job.get('ids') else '')
+                + ('Write the literature note in this chunk.' if i == 1 else 'Do not write a literature note in this chunk.'))
+    else:
+        hint += ('\nIn people_mentioned, list the private individuals the source names (not public figures, not authors '
+                 'of cited works), each as written in the source.')
+    return (f'Allowed types: {", ".join(types)}.\nAllowed domains: {", ".join(domains)}.\n{hint}\n'
             f'{kind}\n\n'
             f'EXISTING VAULT NOTES (titles you may put in links, copied exactly):\n'
             + '\n'.join(f'- {t}' for t in titles) + context +
@@ -484,7 +523,7 @@ def call_local(job, system, user):
     need = (len(system) + len(user)) // 3 + 4096
     num_ctx = 4096
     while num_ctx < need and num_ctx < CFG['local']['num_ctx']: num_ctx *= 2
-    body = {'model': job['model'], 'stream': True, 'format': SCHEMA, 'keep_alive': CFG['local']['keep_alive'],
+    body = {'model': job['model'], 'stream': True, 'format': job_schema(job), 'keep_alive': CFG['local']['keep_alive'],
             'options': {'num_ctx': min(num_ctx, CFG['local']['num_ctx']), 'temperature': CFG['local']['temperature']},
             'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]}
     if job['model'] not in (ollama_models() or []):
@@ -531,7 +570,7 @@ def call_anthropic(job, system, user):
         'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json'}, json={
         'model': job['model'], 'max_tokens': c['max_tokens'], 'system': system,
         'messages': [{'role': 'user', 'content': user + '\n\nReturn only one JSON object matching this '
-                      'JSON Schema, with no prose around it:\n' + json.dumps(SCHEMA)}]})
+                      'JSON Schema, with no prose around it:\n' + json.dumps(job_schema(job))}]})
     if r.status_code != 200: raise Refused(f'Anthropic API error {r.status_code}: {r.text[:300]}')
     return ''.join(b.get('text', '') for b in r.json().get('content', []) if b.get('type') == 'text')
 
@@ -545,7 +584,7 @@ def call_openai(job, system, user):
         'authorization': f'Bearer {key}', 'content-type': 'application/json'}, json={
         'model': job['model'], 'response_format': {'type': 'json_object'},
         'messages': [{'role': 'system', 'content': system},
-                     {'role': 'user', 'content': user + '\n\nReturn one JSON object matching: ' + json.dumps(SCHEMA)}]})
+                     {'role': 'user', 'content': user + '\n\nReturn one JSON object matching: ' + json.dumps(job_schema(job))}]})
     if r.status_code != 200: raise Refused(f'OpenAI API error {r.status_code}: {r.text[:300]}')
     return r.json()['choices'][0]['message']['content']
 
@@ -599,8 +638,12 @@ def safe_body(s):
 
 
 def tidy_note(raw, job, nsource, catalogue, names, ncontext=''):
-    typ = raw.get('type') if raw.get('type') in EXTRACT_TYPES else 'knowledge'
-    domain = raw.get('domain') if raw.get('domain') in DOMAINS else (job.get('domain') or 'work')
+    if job.get('mode') == 'research':
+        typ = raw.get('type') if raw.get('type') in RESEARCH_TYPES else 'claim'
+        domain = 'research'
+    else:
+        typ = raw.get('type') if raw.get('type') in EXTRACT_TYPES else 'knowledge'
+        domain = raw.get('domain') if raw.get('domain') in DOMAINS and raw.get('domain') != 'research' else (job.get('domain') or 'work')
     t = clean_title(raw.get('title')) or 'Untitled note'
     ft = full_title(t, typ, domain)
     body = re.sub(r'\A#\s+[^\n]*\n+', '', safe_body(raw.get('body')))
@@ -647,6 +690,167 @@ def flag(n, names):
     return n
 
 
+# ------------------------------------------------------------------ people names in drafts
+def register():
+    """Rows of the people register and the patterns that find their names; empty when there is no store."""
+    if not os.path.isfile(os.path.join(PEOPLE_STORE, brain.REGISTER)): return [], []
+    rows, _ = brain.register_rows(PEOPLE_STORE)
+    return rows, brain.name_patterns(rows)
+
+
+def replace_names(text, pats):
+    """Registered names become acronyms. Matching folds accents and case; everything else is left as written."""
+    text = str(text or '')
+    if not pats or not text: return text, set()
+    folded, idx = [], []
+    for i, c in enumerate(text):
+        for ch in brain.fold(c): folded.append(ch); idx.append(i)
+    ftext, spans = ''.join(folded), []
+    for acr, rx in pats:
+        spans += [(idx[m.start()], idx[m.end() - 1] + 1, acr) for m in rx.finditer(ftext) if m.end() > m.start()]
+    if not spans: return text, set()
+    out, pos, used = [], 0, set()
+    for a, b, acr in sorted(spans, key=lambda x: (x[0], -(x[1] - x[0]))):
+        if a < pos: continue
+        out += [text[pos:a], acr]; pos = b; used.add(acr)
+    return ''.join(out + [text[pos:]]), used
+
+
+def pseudonymise(n, pats):
+    used = set()
+    for k in ('title', 'heading', 'summary', 'body'):
+        n[k], u = replace_names(n[k], pats); used |= u
+    for e in n['evidence']:
+        e['quote'], u = replace_names(e['quote'], pats)
+        if u: e['pseudonymised'] = True; used |= u
+        e['where'], u = replace_names(e.get('where', ''), pats); used |= u
+    tags = []
+    for t in n['tags']:
+        t2, u = replace_names(t.replace('-', ' '), pats)
+        used |= u; tags.append(slug(t2, 30) if u else t)
+    n['tags'] = tags
+    return used
+
+
+def unknown_people(mentioned, rows, pats):
+    out = []
+    for m in mentioned or []:
+        m = one_line(m, 80)
+        if len(m) < 3 or not re.search(r'[^\W\d_]', m): continue
+        if brain.find_names(m, pats) or any(brain.fold(m).casefold() == brain.fold(r['name']).casefold() for r in rows): continue
+        if m.casefold() not in {x.casefold() for x in out}: out.append(m)
+    return out[:20]
+
+
+# ------------------------------------------------------------------ research papers
+DOI = re.compile(r'\b(10\.\d{4,9}/[^\s"<>]+[^\s"<>.,;:)\]])', re.I)
+ARXIV = re.compile(r'\barXiv:\s*(\d{4}\.\d{4,5}(?:v\d+)?)|\barxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}(?:v\d+)?)', re.I)
+
+
+def detect_ids(text):
+    head = text[:4000]                                   # the first page; later ones are usually citations
+    ids = {}
+    m = DOI.search(head)
+    if m: ids['doi'] = m.group(1)
+    m = ARXIV.search(head)
+    if m: ids['arxiv'] = m.group(1) or m.group(2)
+    return ids
+
+
+def library_text():
+    p = os.path.join(VAULT, brain.LIBRARY)
+    return brain.read(p)[0] if os.path.isfile(p) else ''
+
+
+def library_entries():
+    """Key -> {type, fields} for research/library.bib (a light parser: enough to list and match papers)."""
+    out, t = {}, library_text()
+    for m in brain.BIB_ENTRY.finditer(t):
+        start, depth, i = m.end(), 1, m.end()
+        while i < len(t) and depth:
+            depth += {'{': 1, '}': -1}.get(t[i], 0); i += 1
+        body = t[start:i - 1]
+        f = {k.lower(): re.sub(r'[{}]', '', v).strip() for k, v in re.findall(r'(\w+)\s*=\s*(\{(?:[^{}]|\{[^{}]*\})*\}|"[^"]*"|\d+)', body)}
+        f = {k: v.strip('"') for k, v in f.items()}
+        out[m.group(2)] = {'type': m.group(1).lower(), 'fields': f}
+    return out
+
+
+def make_citekey(paper, taken):
+    first = (paper.get('authors') or [''])[0]
+    last = re.sub(r'[^a-z]', '', brain.fold(first.split(',')[0] if ',' in first else (first.split() or [''])[-1]).lower()) or 'anon'
+    year = re.sub(r'\D', '', str(paper.get('year') or ''))[:4] or 'nd'
+    words = [w for w in re.findall(r'[a-z]+', brain.fold(paper.get('title') or '').lower()) if w not in brain_stop()]
+    base = f'{last}{year}{(words or ["paper"])[0]}'[:40]
+    key, n = base, 1
+    while key.lower() in {x.lower() for x in taken}: n += 1; key = f'{base}{n}'
+    return key
+
+
+def brain_stop():
+    return {'a', 'an', 'the', 'on', 'of', 'for', 'and', 'in', 'to', 'with', 'is', 'are', 'towards', 'toward', 'via', 'from', 'by', 'at'}
+
+
+def bib_escape(v): return re.sub(r'[{}\\]', '', one_line(v, 400))
+
+
+def make_bibtex(key, paper):
+    arx = paper.get('arxiv'); doi = paper.get('doi'); venue = (paper.get('venue') or '').strip()
+    if not venue or 'arxiv' in venue.lower(): kind, vfield = 'misc', 'howpublished'
+    elif re.search(r'journal|transactions|letters|review|nature|science|magazine', venue, re.I): kind, vfield = 'article', 'journal'
+    else: kind, vfield = 'inproceedings', 'booktitle'
+    f = [('title', paper.get('title')), ('author', ' and '.join(paper.get('authors') or [])), ('year', paper.get('year'))]
+    if venue: f.append((vfield, venue))
+    if doi: f.append(('doi', doi))
+    if arx: f += [('eprint', arx), ('archivePrefix', 'arXiv')]
+    lines = [f'  {k} = {{{bib_escape(v)}}},' for k, v in f if v and str(v).strip()]
+    return f'@{kind}{{{key},\n' + '\n'.join(lines) + '\n}\n'
+
+
+def check_bibtex(text, key):
+    """A pasted BibTeX entry: exactly one entry, balanced braces, at most 20 KB. Its key is replaced by ours."""
+    t = str(text or '').strip()
+    if len(t) > 20000: raise Refused('The BibTeX entry is too long.')
+    ents = re.findall(r'@\s*\w+\s*\{', t)
+    if len(ents) != 1 or not brain.BIB_ENTRY.match(t) or re.match(r'\s*@\s*(comment|string|preamble)\b', t, re.I): raise Refused('Paste exactly one BibTeX entry, starting with @article{, @inproceedings{ or similar.')
+    if t.count('{') != t.count('}'): raise Refused('The BibTeX entry has unbalanced braces.')
+    return brain.BIB_ENTRY.sub(lambda m: f'@{m.group(1)}{{{key},', t, count=1).rstrip() + '\n'
+
+
+def finish_research(job, papers, fields, text, names):
+    """One literature note per paper, a citekey, and a source link from every other note to it."""
+    paper = {'title': '', 'authors': [], 'year': '', 'venue': '', 'doi': '', 'arxiv': ''}
+    for pp in papers:
+        for k in paper:
+            v = pp.get(k) if isinstance(pp, dict) else None
+            if v and not paper[k]: paper[k] = [one_line(a, 120) for a in v][:30] if k == 'authors' and isinstance(v, list) else one_line(v, 400)
+    ids = job.get('ids') or {}
+    paper.update({k: v for k, v in ids.items() if v})                     # identifiers read from the source win
+    lib = library_entries()
+    same = next((k for k, e in lib.items() if paper['doi'] and e['fields'].get('doi', '').lower() == paper['doi'].lower()
+                 or paper['arxiv'] and e['fields'].get('eprint', '').split('v')[0] == paper['arxiv'].split('v')[0]), None)
+    taken = set(lib) | {n[4:].lower() for n in names if n.startswith('lit - ')}
+    key = same or make_citekey(paper, taken)
+    job['paper'], job['citekey'], job['paper_in_library'] = paper, key, bool(same)
+    job['fields'] = [f for f in dict.fromkeys(fields) if f in brain.FIELDS][:6] or ['other']
+    job['bibtex'] = '' if same else make_bibtex(key, paper)
+    lits = [n for n in job['notes'] if n['type'] == 'literature']
+    for extra in lits[1:]: extra['type'] = 'claim'                     # one literature note per paper
+    if lits: lit = lits[0]
+    else:
+        lit = {'id': uuid.uuid4().hex[:8], 'include': True, 'type': 'literature', 'domain': 'research', 'tags': ['paper'],
+               'links': [], 'evidence': [], 'confidence': 'medium', 'summary': one_line(job.get('source_summary') or paper['title'], 160),
+               'body': '**Question.** To write.\n\n**Method.** To write.\n\n**Results.** To write.\n\n**Limitations.** To write.\n\n**My view.** To write.'}
+        job['notes'].insert(0, lit)
+    lit['title'], lit['heading'] = key, paper['title'] or lit.get('heading') or key
+    for n in job['notes']:
+        n['source_lit'] = None if n is lit else f'LIT - {key}'
+        flag(n, names)
+    if same:
+        lit['include'] = False
+        lit['flags'].append({'level': 'info', 'text': f'This paper is already in your library as {key}; its claims will link to that note.'})
+
+
 # ------------------------------------------------------------------ jobs
 def job_dir(jid): return os.path.join(WORK, jid)
 
@@ -689,13 +893,25 @@ def run_job(jid):
         names = all_names_lower()
         nsource = norm(text)
         ncontext = norm('\n'.join(job.get('context') or []))
+        research = job.get('mode') == 'research'
+        if job['provider'] != 'local':
+            _, pats0 = register()
+            if brain.find_names(text + '\n' + '\n'.join(job.get('context') or []), pats0) or \
+               brain.find_names(text, pats0, hard=False):
+                raise Refused('This source names people from your register, so it is processed by the local model only.')
+        if research: job['ids'] = detect_ids(text)
+        prompt = RESEARCH_PROMPT if research else PROMPT
+        papers, fields, mentioned = [], [], []
         call = {'local': call_local, 'anthropic': call_anthropic, 'openai': call_openai}[job['provider']]
         merged, summaries, questions = {}, [], []
         for i, chunk in enumerate(parts, 1):
             job['part'], job['parts'], job['tokens'] = i, len(parts), 0
             set_state(job, 'generating', f'Extracting part {i} of {len(parts)} with {job["model"]}.')
-            data = parse_json(call(job, PROMPT, user_message(job, chunk, i, len(parts), titles)))
+            data = parse_json(call(job, prompt, user_message(job, chunk, i, len(parts), titles)))
             if data.get('source_summary'): summaries.append(str(data['source_summary']).strip())
+            if isinstance(data.get('paper'), dict): papers.append(data['paper'])
+            if isinstance(data.get('fields'), list): fields += [str(f) for f in data['fields']]
+            if isinstance(data.get('people_mentioned'), list): mentioned += data['people_mentioned']
             questions += [str(q).strip() for q in data.get('open_questions') or [] if str(q).strip()]
             for raw in data.get('notes') or []:
                 if not isinstance(raw, dict): continue
@@ -717,6 +933,23 @@ def run_job(jid):
         job['notes'] = list(merged.values())
         job['source_summary'] = ' '.join(summaries)[:1200]
         job['open_questions'] = list(dict.fromkeys(questions))[:12]
+        if research: finish_research(job, papers, fields, text, names)
+        # People: registered names become acronyms; unregistered names are flagged for you to decide.
+        rows, pats = register()
+        job['source_summary'], _ = replace_names(job['source_summary'], pats)
+        job['open_questions'] = [replace_names(q, pats)[0] for q in job['open_questions']]
+        unknown = [] if research else unknown_people(mentioned, rows, pats)
+        job['people_unknown'] = unknown
+        for n in job['notes']:
+            used = pseudonymise(n, pats)
+            flag(n, names)
+            if used:
+                n['flags'].append({'level': 'info', 'text': 'Names from your People register were replaced by ' + ', '.join(sorted(used)) + '. '
+                                   'The note is at least personal, so its summary stays out of the index.'})
+                n['min_sensitivity'] = 'personal'
+            here = [u for u in unknown if u.casefold() in (n['title'] + ' ' + n['body'] + ' ' + n['summary']).casefold()]
+            if here: n['flags'].append({'level': 'warning', 'text': 'Mentions ' + ', '.join(here) + ', not in your People register. Add them in People, or edit the name out.'})
+        if brain.find_names(text, pats): job['names_in_source'] = True
         set_state(job, 'ready', f'{len(job["notes"])} proposed notes. Review them before saving.')
     except Refused as e:
         set_state(job, 'cancelled' if str(e) == 'Cancelled.' else 'failed', str(e))
@@ -747,6 +980,8 @@ def restore_jobs():
 
 
 def new_job(name, data, q, extra=None):
+    mode = q.get('mode', 'general')
+    if mode not in ('general', 'research'): raise Refused('Unknown mode.')
     sens = q.get('sensitivity', '')
     if sens not in SENSITIVITIES: raise Refused('Choose a sensitivity: internal, personal or client.')
     provider = q.get('provider', 'local')
@@ -764,8 +999,8 @@ def new_job(name, data, q, extra=None):
     name = re.sub(r'\s+', ' ', plain(os.path.basename(name or ''))).strip()[:120] or 'pasted.md'
     jid = dt.datetime.now().strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(3)
     job = {'id': jid, 'name': name, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
-           'sensitivity': sens, 'domain': domain, 'provider': provider, 'model': model,
-           'created': now(), 'tokens': 0, 'part': 0, 'parts': 0, 'notes': [], 'state': 'queued',
+           'sensitivity': sens, 'domain': 'research' if mode == 'research' else domain, 'mode': mode,
+           'provider': provider, 'model': model, 'created': now(), 'tokens': 0, 'part': 0, 'parts': 0, 'notes': [], 'state': 'queued',
            'message': 'Waiting for the model.'}
     job.update(extra or {})
     boundary_check(job)
@@ -913,7 +1148,7 @@ def post_message(cid, payload):
 
 
 # ------------------------------------------------------------------ graph
-KNOWN_SENS = {'internal', 'personal', 'client'}
+KNOWN_SENS = {'internal', 'personal', 'client', 'people'}
 
 
 def tag_slug(s):
@@ -968,11 +1203,18 @@ def graph_note(n, dup_names):
     return node
 
 
-def graph_data():
-    """Every note as a node and every resolvable link as an edge, from the same parser the commit gate uses."""
+def is_people(n):
+    fm = n['fm'] if isinstance(n['fm'], dict) else {}
+    return n['path'].startswith(brain.PEOPLE + '/') or str(fm.get('sensitivity', '')).strip().lower() == 'people'
+
+
+def graph_data(include_people=False):
+    """Every note as a node and every resolvable link as an edge, from the same parser the commit gate uses.
+    People notes are left out unless asked for, and the register, the one note with names, never appears."""
     names, paths = brain.build_targets()
     all_notes = [n for n in brain.notes()
-                 if n['path'] not in brain.GENERATED and os.path.basename(n['path']) not in brain.EXEMPT_NAMES]
+                 if n['path'] not in brain.GENERATED and os.path.basename(n['path']) not in brain.EXEMPT_NAMES
+                 and n['path'] != f'{brain.PEOPLE}/{brain.REGISTER}' and (include_people or not is_people(n))]
     counts = {}
     for n in all_notes:
         b = os.path.basename(n['path'])[:-3].lower()
@@ -1025,9 +1267,11 @@ def graph_data():
             'groups': obsidian_groups(), 'dirty': dirty}
 
 
-def graph_note_detail(path):
+def graph_note_detail(path, include_people=False):
     """Summary and tags of one note, revealed on request in the side panel."""
     path = str(path or '')
+    if path == f'{brain.PEOPLE}/{brain.REGISTER}': raise Refused('No such note.')
+    if path.startswith(brain.PEOPLE + '/') and not include_people: raise Refused('People notes need the People tick.')
     for n in brain.notes():
         if n['path'] == path and n['path'] not in brain.GENERATED:
             fm = n['fm'] if isinstance(n['fm'], dict) else {}
@@ -1086,7 +1330,7 @@ def ask_flags(src):
     q = src.get('q', '')
     if not isinstance(q, str): raise Refused('q must be text.')
     q = re.sub(r'\s+', ' ', plain(q)).strip()[:500]
-    return q, flag('client'), flag('inbox')
+    return q, flag('client'), flag('inbox'), flag('people')
 
 
 def rag_status():
@@ -1114,8 +1358,18 @@ def require_clean_index():
         raise Refused('The vault has staged changes. Commit or unstage them first, so this commit holds only this change.')
 
 
+def gate_summary(out):
+    """The gate's plain-English summary, without the warnings and the plumbing."""
+    lines = [l for l in out.splitlines() if l.strip() and not l.startswith(('warn', 'fixed ', 'pre-commit: committed'))]
+    keep = [l for l in lines if not l.startswith('pre-commit: commit refused')]
+    return '\n'.join(keep[:16]) or out.strip()[-1200:]
+
+
 def commit(paths, message):
+    names, tpaths = brain.build_targets()
     for p in paths:
+        if p.endswith('.md') and os.path.isfile(os.path.join(VAULT, p)):
+            brain.fix_note(os.path.join(VAULT, p), p, names, tpaths)          # safe repairs before the gate looks
         r = git('add', '-A', '--', p)
         if r.returncode: raise Refused('git add failed: ' + r.stderr.strip())
     try:
@@ -1123,7 +1377,7 @@ def commit(paths, message):
     except subprocess.TimeoutExpired:
         raise Refused('The commit did not finish within 3 minutes. If commits are signed, check the passphrase prompt.')
     if r.returncode:
-        raise Refused('The vault gate refused the commit:\n' + (r.stderr or r.stdout).strip())
+        raise Refused('The vault gate refused the commit.\n' + gate_summary(r.stderr or r.stdout))
     return git('rev-parse', '--short', 'HEAD').stdout.strip()
 
 
@@ -1131,10 +1385,15 @@ def note_text(n, job, source_rel):
     fm = ['---', f'title: {yq(n["full_title"])}', f'type: {n["type"]}', f'domain: {n["domain"]}',
           'status: draft', f'created: {today()}', f'updated: {today()}', f'summary: {yq(n["summary"])}',
           f'sensitivity: {n["sensitivity"]}', 'tags: [' + ', '.join(n['tags']) + ']',
+          *research_fields(n, job),
           f'sources: [{yq(source_rel)}]',
           f'extracted_by: {yq(job["model"] + (" (local, Ollama)" if job["provider"] == "local" else " (" + job["provider"] + " API)"))}',
           f'confidence: {n["confidence"]}', '---', '']
-    out = fm + [f'# {n["heading"] or n["title"]}', '', n['body'].strip(), '']
+    out = fm + [f'# {n["heading"] or n["title"]}', '']
+    if n.get('source_lit'):
+        where = next((e['where'] for e in n['evidence'] if e.get('where')), '')
+        out += [f'**Source.** [[{n["source_lit"]}]]' + (f', {where}' if where else '') + '.', '']
+    out += [n['body'].strip(), '']
     if n['evidence']:
         out += ['## Evidence', '']
         for e in n['evidence']:
@@ -1144,6 +1403,19 @@ def note_text(n, job, source_rel):
     if n['links']:
         out += ['## Related'] + [f'- [[{l}]]' for l in n['links']] + ['']
     return '\n'.join(out)
+
+
+def research_fields(n, job):
+    if n['domain'] != 'research': return []
+    out = ['field: [' + ', '.join(job.get('fields') or ['other']) + ']']
+    if n['type'] == 'literature':
+        pp = job.get('paper') or {}
+        out += [f'citekey: {job["citekey"]}', 'authors: ' + json.dumps(pp.get('authors') or [], ensure_ascii=False),
+                f'year: {yq(str(pp.get("year") or ""))}', f'venue: {yq(pp.get("venue") or "")}',
+                f'doi: {yq(pp.get("doi") or "")}', f'arxiv: {yq(pp.get("arxiv") or "")}', 'reading: read']
+    if n['type'] == 'claim':
+        out.append('evidence: ' + {'high': 'strong', 'medium': 'moderate'}.get(n['confidence'], 'weak'))
+    return out
 
 
 def effective_sensitivity(job):
@@ -1170,9 +1442,11 @@ def save_job(jid, payload):
         base = by_id.get(edit.get('id'))
         if not base or edit.get('include') is not True: continue
         n = dict(base)
-        n['title'] = clean_title(edit.get('title', n['title'])) or n['title']
-        n['type'] = edit.get('type') if edit.get('type') in EXTRACT_TYPES else n['type']
-        n['domain'] = edit.get('domain') if edit.get('domain') in DOMAINS else n['domain']
+        n['title'] = n['title'] if n['type'] == 'literature' else (clean_title(edit.get('title', n['title'])) or n['title'])
+        types = RESEARCH_TYPES if job.get('mode') == 'research' else EXTRACT_TYPES
+        n['type'] = edit.get('type') if edit.get('type') in types else n['type']
+        if job.get('mode') != 'research':
+            n['domain'] = edit.get('domain') if edit.get('domain') in DOMAINS and edit.get('domain') != 'research' else n['domain']
         n['summary'] = one_line(edit.get('summary', n['summary']), 200)
         n['heading'] = one_line(edit.get('heading', n['heading']), 200) or n['title']
         n['body'] = safe_body(edit.get('body', n['body']))
@@ -1183,7 +1457,10 @@ def save_job(jid, payload):
         sens = edit.get('sensitivity', job['sensitivity'])
         if sens not in SENSITIVITIES or RANK[sens] < RANK[job['sensitivity']]:
             sens = job['sensitivity']          # derived from client material stays client
+        if RANK.get(sens, 0) < RANK.get(base.get('min_sensitivity', 'internal'), 0): sens = base['min_sensitivity']
         n['sensitivity'] = sens
+        n['evidence'] = [dict(e) for e in n['evidence']]
+        pseudonymise(n, register()[1])                    # names typed while editing become acronyms too
         flag(n, names)
         if any(f['level'] == 'danger' for f in n['flags']):
             raise Refused(f'"{n["full_title"]}" already exists in the vault. Rename it first.')
@@ -1192,19 +1469,39 @@ def save_job(jid, payload):
     if not chosen: raise Refused('No notes are selected.')
     if len({n['full_title'].lower() for n in chosen}) != len(chosen):
         raise Refused('Two selected notes have the same name.')
+    bib = ''
+    if job.get('mode') == 'research':
+        lit = f'LIT - {job["citekey"]}'
+        has_lit = any(n['type'] == 'literature' for n in chosen) or lit.lower() in catalogue or \
+                  os.path.isfile(os.path.join(INBOX, lit + '.md'))
+        if any(n.get('source_lit') for n in chosen) and not has_lit:
+            raise Refused(f'Include the literature note: the claims link to {lit}, which is not in the vault yet.')
+        if any(n['type'] == 'literature' for n in chosen) and not job.get('paper_in_library'):
+            bib = check_bibtex(payload['bibtex'], job['citekey']) if str(payload.get('bibtex') or '').strip() else job['bibtex']
+            if job['citekey'] in library_entries(): raise Refused(f'{job["citekey"]} is already in the library.')
+    pats = register()[1]
+    safe_name = replace_names(job['name'], pats)[0]
     with GIT_LOCK:
         require_clean_index()
         year = today()[:4]
-        sdir = f'{SOURCES}/{year}/{today()}-{slug(os.path.splitext(job["name"])[0])}-{job["id"][-6:]}'
+        sdir = f'{SOURCES}/{year}/{today()}-{slug(os.path.splitext(safe_name)[0])}-{job["id"][-6:]}'
         abs_sdir = os.path.join(VAULT, sdir)
         if os.path.exists(abs_sdir): raise Refused('The source folder already exists.')
         os.makedirs(abs_sdir)
-        src_name = slug(os.path.splitext(job['name'])[0]) + os.path.splitext(job['stored'])[1]
-        written = []
+        src_name = slug(os.path.splitext(safe_name)[0]) + os.path.splitext(job['stored'])[1]
+        written, bib_written, lib_before = [], False, None
         try:
-            shutil.copy2(os.path.join(job_dir(jid), job['stored']), os.path.join(abs_sdir, src_name))
-            shutil.copy2(os.path.join(job_dir(jid), 'extracted.txt'), os.path.join(abs_sdir, 'extracted.txt'))
+            ext_text = open(os.path.join(job_dir(jid), 'extracted.txt'), encoding='utf-8').read()
+            if brain.find_names(ext_text + '\n' + job['name'], pats) or brain.find_names(ext_text, pats, hard=False):
+                # Names in the vault's history could never be erased, so the original stays out and the text keeps acronyms.
+                with open(os.path.join(abs_sdir, src_name), 'w', encoding='utf-8') as f:
+                    f.write('Original not kept: it names people from the People register. The pseudonymised text is in extracted.txt.\n')
+                with open(os.path.join(abs_sdir, 'extracted.txt'), 'w', encoding='utf-8') as f: f.write(replace_names(ext_text, pats)[0])
+            else:
+                shutil.copy2(os.path.join(job_dir(jid), job['stored']), os.path.join(abs_sdir, src_name))
+                shutil.copy2(os.path.join(job_dir(jid), 'extracted.txt'), os.path.join(abs_sdir, 'extracted.txt'))
             meta = {k: job[k] for k in ('name', 'size', 'sha256', 'sensitivity', 'provider', 'model', 'created')}
+            meta['name'] = safe_name
             if job.get('chat'): meta.update({'chat': job['chat'], 'context_messages': job.get('context_ids', [])})
             meta['saved'] = now(); meta['notes'] = [n['full_title'] for n in chosen]
             with open(os.path.join(abs_sdir, 'intake.json'), 'w', encoding='utf-8') as f:
@@ -1216,11 +1513,21 @@ def save_job(jid, payload):
                 if os.path.exists(p): raise Refused(f'"{n["full_title"]}" is already in the inbox.')
                 brain.write_atomic(p, note_text(n, job, source_rel))
                 written.append(p)
-            sha = commit([sdir] + [os.path.relpath(p, VAULT) for p in written],
-                         f'intake: {len(chosen)} draft note(s) from {job["name"]} to inbox')
+            extra = []
+            if bib:
+                libp = os.path.join(VAULT, brain.LIBRARY)
+                lib_before = library_text() if os.path.isfile(libp) else None
+                brain.write_atomic(libp, (lib_before or '').rstrip('\n') + '\n\n' + bib)
+                bib_written, extra = True, [brain.LIBRARY]
+            sha = commit([sdir] + [os.path.relpath(p, VAULT) for p in written] + extra,
+                         f'intake: {len(chosen)} draft note(s) from {safe_name} to inbox')
         except BaseException:
-            undo('reset', '-q', '--', sdir, *[os.path.relpath(p, VAULT) for p in written], *GENERATED_FILES)
+            undo('reset', '-q', '--', sdir, *[os.path.relpath(p, VAULT) for p in written], *GENERATED_FILES,
+                 *([brain.LIBRARY] if bib else []))
             undo('checkout', '--', *GENERATED_FILES)
+            if bib_written:                                    # only undo a library change this request made
+                if lib_before is None: os.remove(os.path.join(VAULT, brain.LIBRARY))
+                else: brain.write_atomic(os.path.join(VAULT, brain.LIBRARY), lib_before)
             for p in written:
                 if os.path.exists(p): os.remove(p)        # uncommitted files this request created
             shutil.rmtree(abs_sdir, ignore_errors=True)
@@ -1388,8 +1695,287 @@ def status():
                                 for p in ('anthropic', 'openai')}},
         'vault': {'path': VAULT_SHOWN, 'name': VAULT_NAME, 'lint_errors': len(errs), 'lint_warnings': len(warns), 'inbox': len(list_inbox()),
                   'staged_changes': git('diff', '--cached', '--quiet').returncode != 0},
-        'domains': DOMAINS, 'types': EXTRACT_TYPES, 'sensitivities': SENSITIVITIES,
+        'domains': DOMAINS, 'types': EXTRACT_TYPES, 'research_types': RESEARCH_TYPES, 'sensitivities': SENSITIVITIES,
+        'people': {'ready': os.path.isdir(os.path.join(PEOPLE_STORE, '.git'))},
         'limits': {'max_upload_mb': LIMITS['max_upload_mb']}, 'rag': rag_status()}
+
+
+def lint_fix_api():
+    """Repair what can be repaired safely across the vault. Tracked notes are committed; your untracked ones are only fixed."""
+    with GIT_LOCK:
+        require_clean_index()
+        done = brain.fix()
+        tracked = [r for r in done if git('ls-files', '--error-unmatch', '--', r).returncode == 0
+                   and git('diff', '--quiet', 'HEAD', '--', r).returncode != 0]
+        sha = None
+        if tracked:
+            try: sha = commit(tracked, f'lint: automatic repairs ({len(tracked)} note{"s" if len(tracked) != 1 else ""})')
+            except BaseException:
+                undo('reset', '-q', '--', *tracked, *GENERATED_FILES); undo('checkout', '--', *GENERATED_FILES); raise
+        _LINT['at'] = 0                                    # the vault chip shows the new state at once
+        left = brain.lint(quiet=True)[0]
+    return {'fixed': {r: ch for r, ch in done.items()}, 'commit': sha, 'remaining': brain.explain(left) if left else ''}
+
+
+def lint_explain_api():
+    errs, warns = brain.lint(quiet=True)
+    return {'errors': len(errs), 'warnings': len(warns), 'explained': brain.explain(errs)}
+
+
+# ------------------------------------------------------------------ people (a separate repository at people/)
+def people_git(*args, timeout=120):
+    for attempt in range(11):
+        r = subprocess.run(['git', '-C', PEOPLE_STORE, *args], capture_output=True, text=True, timeout=timeout)
+        if r.returncode == 0 or 'index.lock' not in (r.stderr or '') or attempt == 10: return r
+        time.sleep(1)
+
+
+def people_ready():
+    if not os.path.isdir(os.path.join(PEOPLE_STORE, '.git')):
+        raise Refused('There is no people store yet. Start Brain Intake with bin/brain-intake up, which creates it.')
+
+
+def people_clean(paths):
+    for p in paths:
+        if os.path.exists(os.path.join(PEOPLE_STORE, p)) and people_git('diff', '--quiet', 'HEAD', '--', p).returncode != 0:
+            raise Refused(f'people/{p} has edits that are not committed yet. Commit or discard them first (git -C people status).')
+
+
+def people_commit(paths, message, new_files=()):
+    """Commit to the people store through its own gate; on refusal put every file back as it was."""
+    if people_git('diff', '--cached', '--quiet').returncode != 0:
+        raise Refused('The people store has staged changes. Commit or unstage them first (git -C people status).')
+    try:
+        for p in paths:
+            r = people_git('add', '-A', '--', p)
+            if r.returncode: raise Refused('git add failed: ' + r.stderr.strip())
+        r = people_git('commit', '-q', '-m', message, timeout=180)
+        if r.returncode: raise Refused('The people gate refused the change:\n' + (r.stderr or r.stdout).strip()[-1500:])
+        return people_git('rev-parse', '--short', 'HEAD').stdout.strip()
+    except BaseException:
+        people_git('reset', '-q', '--', *paths)
+        tracked = [p for p in paths if p not in new_files]
+        if tracked: people_git('checkout', '--', *tracked)
+        for p in new_files:
+            try: os.remove(os.path.join(PEOPLE_STORE, p))
+            except FileNotFoundError: pass
+        raise
+
+
+def acronym_arg(a):
+    a = str(a or '').upper()
+    if not brain.ACRONYM.match(a): raise Refused('Not an acronym.')
+    return a
+
+
+def parse_entry(e):
+    m = brain.ENTRY.match(e.split('\n', 1)[0])
+    if not m: return {'date': '', 'type': 'note', 'channel': '', 'text': e}
+    rest = '\n'.join(l[2:] if l.startswith('  ') else l for l in e.split('\n')[1:])
+    return {'date': m.group(1), 'type': m.group(2), 'channel': m.group(3) or '', 'text': m.group(4) + ('\n' + rest if rest else '')}
+
+
+def section(body, name):
+    m = re.search(rf'^## {re.escape(name)}[ \t]*\n(.*?)(?=^## |\Z)', body, re.S | re.M)
+    return m.group(1).strip() if m else ''
+
+
+def people_list():
+    if not os.path.isdir(os.path.join(PEOPLE_STORE, '.git')):
+        return {'ready': False, 'people': []}
+    rows, probs = brain.register_rows(PEOPLE_STORE)
+    out = []
+    for r in rows:
+        p = os.path.join(PEOPLE_STORE, r['acronym'] + '.md')
+        entries, contexts = [], []
+        if os.path.isfile(p):
+            fm, _, body = brain.split_fm(brain.read(p)[0])
+            entries = brain.log_entries(body)[0] or []
+            contexts = fm.get('contexts') if isinstance(fm, dict) and isinstance(fm.get('contexts'), list) else []
+        last = parse_entry(entries[-1])['date'] if entries else ''
+        out.append({'acronym': r['acronym'], 'name': r['name'], 'how': r['context'], 'since': r['since'], 'status': r['status'],
+                    'contexts': [str(c) for c in contexts], 'entries': len(entries), 'last': last})
+    return {'ready': True, 'people': out, 'problems': probs, 'contexts': sorted(brain.CONTEXTS),
+            'channels': sorted(brain.CHANNELS), 'types': sorted(brain.LOG_TYPES['person'])}
+
+
+def person_view(acr):
+    people_ready(); acr = acronym_arg(acr)
+    p = os.path.join(PEOPLE_STORE, acr + '.md')
+    if not os.path.isfile(p): raise Refused('No such person.')
+    fm, _, body = brain.split_fm(brain.read(p)[0])
+    entries = brain.log_entries(body)[0] or []
+    row = next((r for r in brain.register_rows(PEOPLE_STORE)[0] if r['acronym'] == acr), {})
+    return {'acronym': acr, 'name': row.get('name', ''), 'how': row.get('context', ''), 'since': row.get('since', ''),
+            'status': row.get('status', ''), 'profile': section(body, 'Profile'), 'entries': [parse_entry(e) for e in entries]}
+
+
+def people_add_api(payload):
+    people_ready()
+    ctx = payload.get('contexts') if isinstance(payload.get('contexts'), list) else []
+    with GIT_LOCK:
+        people_clean([brain.REGISTER, 'README.md'])
+        before = {f: brain.read(os.path.join(PEOPLE_STORE, f))[0] for f in (brain.REGISTER, 'README.md')}
+        try:
+            acr, paths = brain.add_person(PEOPLE_STORE, payload.get('name', ''), [str(c) for c in ctx], str(payload.get('since') or ''),
+                                          str(payload.get('how') or ''), str(payload.get('acronym') or '') or None)
+        except ValueError as e:
+            for f, t in before.items(): brain.write_atomic(os.path.join(PEOPLE_STORE, f), t)
+            raise Refused(str(e))
+        sha = people_commit(paths, f'people: add {acr}', new_files=(acr + '.md',))
+    return {'acronym': acr, 'commit': sha}
+
+
+def people_suggest(name):
+    if not os.path.isdir(os.path.join(PEOPLE_STORE, '.git')): return {'acronym': ''}
+    try: return {'acronym': brain.suggest_acronym(name, {r['acronym'] for r in brain.register_rows(PEOPLE_STORE)[0]})}
+    except ValueError: return {'acronym': ''}
+
+
+def entry_date(v):
+    d = str(v or today())
+    try: dt.date.fromisoformat(d)
+    except ValueError: raise Refused('The date must be YYYY-MM-DD.')
+    return d
+
+
+def people_log_api(acr, payload):
+    people_ready(); acr = acronym_arg(acr)
+    p = os.path.join(PEOPLE_STORE, acr + '.md')
+    if not os.path.isfile(p): raise Refused('No such person.')
+    text = str(payload.get('text') or '')
+    if len(text) > 8000: raise Refused('An entry is at most 8,000 characters.')
+    with GIT_LOCK:
+        people_clean([acr + '.md'])
+        before = brain.read(p)[0]
+        try:
+            entry = brain.append_entry(p, 'person', entry_date(payload.get('date')), str(payload.get('type') or ''),
+                                       str(payload.get('channel') or '') or None, text, register()[1])
+        except ValueError as e:
+            brain.write_atomic(p, before); raise Refused(str(e))
+        sha = people_commit([acr + '.md'], f'people: log {acr}')
+    return {'entry': parse_entry(entry), 'commit': sha}
+
+
+def people_profile_api(acr, payload):
+    people_ready(); acr = acronym_arg(acr)
+    p = os.path.join(PEOPLE_STORE, acr + '.md')
+    if not os.path.isfile(p): raise Refused('No such person.')
+    prof = re.sub(r'^(#{1,6}\s)', r'\\\1', str(payload.get('profile') or '').strip(), flags=re.M)   # no headings of its own
+    if len(prof) > 8000: raise Refused('The profile is at most 8,000 characters.')
+    hits = brain.find_names(prof, register()[1])
+    if hits: raise Refused(f'The profile names {", ".join(hits)}; use the acronym.')
+    with GIT_LOCK:
+        people_clean([acr + '.md'])
+        t = brain.read(p)[0]
+        m = re.search(r'^## Profile[ \t]*\n(.*?)(?=^## |\Z)', t, re.S | re.M)
+        if not m: raise Refused('The note has no ## Profile section.')
+        brain.write_atomic(p, t[:m.start(1)] + '\n' + prof + '\n\n' + t[m.end(1):])
+        sha = people_commit([acr + '.md'], f'people: update profile of {acr}')
+    return {'commit': sha}
+
+
+def people_status_api(acr, payload):
+    people_ready(); acr = acronym_arg(acr)
+    st = payload.get('status')
+    if st not in ('active', 'archived'): raise Refused('Status is active or archived. Erasure is done from Terminal: brain.py erase.')
+    with GIT_LOCK:
+        people_clean([brain.REGISTER])
+        reg = os.path.join(PEOPLE_STORE, brain.REGISTER)
+        t = brain.read(reg)[0]
+        t2, n = re.subn(rf'^(\|\s*{acr}\s*\|(?:[^|\n]*\|){{3}})\s*(active|archived)\s*\|\s*$', rf'\g<1> {st} |', t, flags=re.M)
+        if n != 1: raise Refused('No active or archived row for that acronym.')
+        brain.write_atomic(reg, t2)
+        sha = people_commit([brain.REGISTER], f'people: mark {acr} {st}')
+    return {'commit': sha}
+
+
+# ------------------------------------------------------------------ research: library and notebooks
+NOTEBOOKS = 'research/notebooks'
+
+
+def research_view():
+    lib = library_entries()
+    lits, notebooks = {}, []
+    for n in brain.notes():
+        fm = n['fm'] if isinstance(n['fm'], dict) else {}
+        if n['path'].startswith(brain.INBOX) or brain.is_template(n['path']): continue
+        if fm.get('type') == 'literature' and fm.get('citekey'):
+            lits[str(fm['citekey'])] = {'path': n['path'], 'reading': str(fm.get('reading') or '')}
+        if fm.get('type') == 'notebook':
+            entries = brain.log_entries(n['body'])[0] or []
+            notebooks.append({'path': n['path'], 'title': one_line(fm.get('title') or os.path.basename(n['path'])[:-3], 160),
+                              'sensitivity': norm_sens(fm.get('sensitivity')), 'entries': len(entries),
+                              'last': parse_entry(entries[-1])['date'] if entries else '',
+                              'recent': [parse_entry(e) for e in entries[-5:]][::-1]})
+    papers = [{'key': k, 'title': one_line(e['fields'].get('title', ''), 300), 'year': e['fields'].get('year', ''),
+               'authors': one_line(e['fields'].get('author', ''), 200), 'doi': e['fields'].get('doi', ''),
+               'arxiv': e['fields'].get('eprint', ''), 'note': lits.get(k, {}).get('path', ''), 'reading': lits.get(k, {}).get('reading', '')}
+              for k, e in lib.items()]
+    return {'papers': papers, 'notebooks': sorted(notebooks, key=lambda x: x['last'], reverse=True),
+            'fields': sorted(brain.FIELDS), 'types': sorted(brain.LOG_TYPES['notebook'])}
+
+
+def notebook_create_api(payload):
+    title = clean_title(payload.get('project'))
+    if not title: raise Refused('Name the project.')
+    sens = payload.get('sensitivity', 'personal')
+    if sens not in SENSITIVITIES: raise Refused('Sensitivity is internal, personal or client.')
+    fields = [f for f in (payload.get('fields') or []) if f in brain.FIELDS] or ['other']
+    aim = safe_body(str(payload.get('aim') or 'To write.'))[:4000]
+    name = f'NB - {title}'
+    if brain.find_names(title + '\n' + aim, register()[1]): raise Refused('The project name or aim names someone from your register; use their acronym.')
+    if name.lower() in all_names_lower(): raise Refused(f'"{name}" already exists.')
+    rel_ = f'{NOTEBOOKS}/{name}.md'
+    hub = os.path.join(VAULT, HOME['research'][1])
+    if not os.path.isfile(hub): raise Refused('The research hub is missing: research/00 MOC - Research.md.')
+    text = (f'---\ntitle: {yq(name)}\ntype: notebook\ndomain: research\nstatus: evergreen\ncreated: {today()}\nupdated: {today()}\n'
+            f'summary: {yq("Lab notebook: " + title)}\nsensitivity: {sens}\nfield: [{", ".join(fields)}]\ntags: [research, notebook]\n---\n\n'
+            f'# {title}\n\n## Aim\n\n{aim}\n\n## Setup\n\nModels, data, code (commit or path), environment. Keep this current.\n\n'
+            '## Log\n\n<!-- Locked: add new entries at the end. Types: setup, run, result, decision, note, correction. -->\n')
+    with GIT_LOCK:
+        require_clean_index()
+        hub_rel = HOME['research'][1]
+        hub_before = brain.read(hub)[0]
+        if git('diff', '--quiet', '--', hub_rel).returncode != 0: raise Refused('The research hub has uncommitted edits. Commit them first.')
+        os.makedirs(os.path.join(VAULT, NOTEBOOKS), exist_ok=True)
+        try:
+            brain.write_atomic(os.path.join(VAULT, rel_), text)
+            brain.write_atomic(hub, insert_link(hub_before, '## Notebooks', f'- [[{name}]]'))
+            sha = commit([rel_, hub_rel], f'research: start notebook {name}')
+        except BaseException:
+            undo('reset', '-q', '--', rel_, hub_rel, *GENERATED_FILES)
+            undo('checkout', '--', *GENERATED_FILES)
+            brain.write_atomic(hub, hub_before)
+            if os.path.exists(os.path.join(VAULT, rel_)): os.remove(os.path.join(VAULT, rel_))
+            raise
+    return {'path': rel_, 'commit': sha}
+
+
+def notebook_log_api(payload):
+    rel_ = str(payload.get('path') or '')
+    p = os.path.realpath(os.path.join(VAULT, rel_))
+    if not (p.startswith(os.path.realpath(os.path.join(VAULT, 'research')) + os.sep) and p.endswith('.md') and os.path.isfile(p)):
+        raise Refused('No such notebook.')
+    fm = brain.split_fm(brain.read(p)[0])[0]
+    if not isinstance(fm, dict) or fm.get('type') != 'notebook': raise Refused('That note is not a notebook.')
+    text = str(payload.get('text') or '')
+    if len(text) > 8000: raise Refused('An entry is at most 8,000 characters.')
+    rel_ = os.path.relpath(p, VAULT)
+    with GIT_LOCK:
+        require_clean_index()
+        if git('diff', '--quiet', '--', rel_).returncode != 0: raise Refused('The notebook has uncommitted edits. Commit them first.')
+        before = brain.read(p)[0]
+        try:
+            entry = brain.append_entry(p, 'notebook', entry_date(payload.get('date')), str(payload.get('type') or ''), None,
+                                       text, register()[1])
+            sha = commit([rel_], f'research: log {os.path.basename(rel_)[:-3]}')
+        except ValueError as e:
+            brain.write_atomic(p, before); raise Refused(str(e))
+        except BaseException:
+            undo('reset', '-q', '--', rel_, *GENERATED_FILES); undo('checkout', '--', *GENERATED_FILES)
+            brain.write_atomic(p, before); raise
+    return {'entry': parse_entry(entry), 'commit': sha}
 
 
 # ------------------------------------------------------------------ HTTP
@@ -1449,14 +2035,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _stream_ask(self, payload):
         """Retrieve, then stream a grounded answer as newline-delimited JSON."""
-        q, client, inbox = ask_flags(payload)
+        q, client, inbox, people = ask_flags(payload)
         if not q: raise Refused('Ask a question first.')
         if not ANSWER_LOCK.acquire(blocking=False):
             return self._send(429, {'error': 'Another answer is being written. Wait a moment, or stop it first.'})
         conn, stop, text, started = None, threading.Event(), [], False
         try:
             k = int(RAG_CFG.get('k', 6))
-            res = RAG.search(q, client, inbox, k=k)
+            res = RAG.search(q, client, inbox, k=k, include_people=people)
             model = answer_model()
             started = True
             self.send_response(200)
@@ -1573,14 +2159,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, public(j)) if j else self._send(404, {'error': 'No such job.'})
             if u.path == '/api/inbox': return self._send(200, list_inbox())
             if u.path == '/api/search':
-                q, client, inbox = ask_flags({k: v[0] for k, v in parse_qs(u.query).items()})
+                q, client, inbox, people = ask_flags({k: v[0] for k, v in parse_qs(u.query).items()})
                 if not q: return self._send(200, {'results': [], 'terms': [], 'ms': 0, 'vector': False})
-                res = RAG.search(q, client, inbox, k=8)
+                res = RAG.search(q, client, inbox, k=8, include_people=people)
                 for r in res['results']: r.pop('text', None)
                 return self._send(200, res)
-            if u.path == '/api/graph': return self._send(200, graph_data())
-            if u.path == '/api/graph/note': return self._send(200, graph_note_detail(parse_qs(u.query).get('id', [''])[0]))
+            if u.path == '/api/graph':
+                return self._send(200, graph_data(include_people=parse_qs(u.query).get('people', ['0'])[0] == '1'))
+            if u.path == '/api/graph/note':
+                qs_ = parse_qs(u.query)
+                return self._send(200, graph_note_detail(qs_.get('id', [''])[0], qs_.get('people', ['0'])[0] == '1'))
             if u.path == '/api/chats': return self._send(200, list_chats())
+            if u.path == '/api/people': return self._send(200, people_list())
+            if u.path == '/api/people/suggest': return self._send(200, people_suggest(parse_qs(u.query).get('name', [''])[0][:120]))
+            m = re.fullmatch(r'/api/people/([A-Z0-9]{2,6})', u.path, re.ASCII)
+            if m: return self._send(200, person_view(m.group(1)))
+            if u.path == '/api/research': return self._send(200, research_view())
+            if u.path == '/api/lint': return self._send(200, lint_explain_api())
             m = re.fullmatch(r'/api/chats/([\w-]+)', u.path, re.ASCII)
             if m: return self._send(200, chat_view(load_chat(m.group(1))))
             if u.path == '/api/inbox/note':
@@ -1629,6 +2224,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {'cleared': jid})
             if u.path == '/api/ask': return self._stream_ask(self._json())
             if u.path == '/api/chats': return self._send(200, create_chat(self._json()))
+            if u.path == '/api/people': return self._send(200, people_add_api(self._json()))
+            m = re.fullmatch(r'/api/people/([A-Z0-9]{2,6})/(entries|profile|status)', u.path, re.ASCII)
+            if m:
+                fn = {'entries': people_log_api, 'profile': people_profile_api, 'status': people_status_api}[m.group(2)]
+                return self._send(200, fn(m.group(1), self._json()))
+            if u.path == '/api/research/notebooks': return self._send(200, notebook_create_api(self._json()))
+            if u.path == '/api/lint/fix': return self._send(200, lint_fix_api())
+            if u.path == '/api/research/notebooks/entries': return self._send(200, notebook_log_api(self._json()))
             if u.path == '/api/chats/start': return self._send(200, start_chat(self._json()))
             m = re.fullmatch(r'/api/chats/([\w-]+)/(messages|settings|delete)', u.path, re.ASCII)
             if m:

@@ -38,11 +38,11 @@ services:
       GIT_COMMITTER_NAME: Brain Intake
       GIT_COMMITTER_EMAIL: brain-intake@localhost
       # git settings for the container only. Environment settings outrank the vault's .git/config.
-      GIT_CONFIG_COUNT: "10"
+      GIT_CONFIG_COUNT: "11"
       GIT_CONFIG_KEY_0: safe.directory
       GIT_CONFIG_VALUE_0: /vault
-      GIT_CONFIG_KEY_1: core.hooksPath            # the vault's gate always runs, whatever .git/config says
-      GIT_CONFIG_VALUE_1: _system/hooks
+      GIT_CONFIG_KEY_1: core.hooksPath            # the vault's gate always runs, in the vault and in people/
+      GIT_CONFIG_VALUE_1: /vault/_system/hooks
       GIT_CONFIG_KEY_2: core.autocrlf             # same as on the Mac
       GIT_CONFIG_VALUE_2: ${BRAIN_GIT_AUTOCRLF:-false}
       GIT_CONFIG_KEY_3: gc.auto                   # no background gc that a stop could cut short
@@ -59,6 +59,8 @@ services:
       GIT_CONFIG_VALUE_8: /state/signing/allowed_signers
       GIT_CONFIG_KEY_9: core.fsmonitor
       GIT_CONFIG_VALUE_9: "false"
+      GIT_CONFIG_KEY_10: safe.directory           # the people store, its own repository inside the vault
+      GIT_CONFIG_VALUE_10: /vault/people
     volumes:
       - {type: bind, source: "${BRAIN_VAULT_HOST}", target: /vault, bind: {create_host_path: false}}
       - {type: bind, source: "${BRAIN_STATE_HOST:?run bin/brain-intake up}", target: /state, bind: {create_host_path: false}}
@@ -69,6 +71,8 @@ services:
       - {type: bind, source: "${BRAIN_VAULT_HOST}/_system/hooks", target: /vault/_system/hooks, read_only: true, bind: {create_host_path: false}}
       - {type: bind, source: "${BRAIN_VAULT_HOST}/_system/scripts", target: /vault/_system/scripts, read_only: true, bind: {create_host_path: false}}
       - {type: bind, source: "${BRAIN_VAULT_HOST}/.obsidian", target: /vault/.obsidian, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/people/.git/config", target: /vault/people/.git/config, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${BRAIN_VAULT_HOST}/people/.git/hooks", target: /vault/people/.git/hooks, read_only: true, bind: {create_host_path: false}}
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=64m
     networks: [inner]
