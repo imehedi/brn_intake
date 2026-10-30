@@ -28,7 +28,7 @@ The first run builds the image (about a minute) and creates two keys in `state/`
 | `bin/brain-intake status` | Containers, health, the page, the container clock and any git lock |
 | `bin/run-native.sh [--open]` | Fallback without Docker: the same app and state, run on the Mac directly |
 
-**Models.** They run in Ollama on the Mac, not in the container, because containers on macOS cannot use the Apple GPU. Extraction uses `gemma3:27b`. Ask uses `embeddinggemma` for meaning search and `gemma3:4b` for answers; [docs/usage.md](docs/usage.md) says how to install them.
+**Models.** They run in Ollama on the Mac, not in the container, because containers on macOS cannot use the Apple GPU. Extraction uses `gemma3:27b`; the decision model `jan-v1:4b` decides who is a person you know, where each note belongs and what a typed instruction asks for; Ask uses `embeddinggemma` for meaning search and `gemma3:4b` for answers. The Settings screen swaps any of them for another installed model. [docs/usage.md](docs/usage.md) says how to install them and how a drop is decided, filed and undone.
 
 ## How it is put together
 
@@ -45,7 +45,8 @@ The first run builds the image (about a minute) and creates two keys in `state/`
   Every commit runs the vault's own gate (`core.hooksPath` is forced in the container's environment). The gate's code is loaded from the vault, so the app and your own commits apply the same rules.
 - **Commits are signed, but not with your key.** You are the author. Brain Intake is the committer and signs with its own SSH key in `state/signing/`. The launcher registers that key in the vault's `.git/config` (`gpg.ssh.allowedSignersFile`), so `git log --show-signature` on the Mac shows the signature as good. Your GPG key never enters a container. To revoke the key, delete its line from `state/signing/allowed_signers`.
 - **An access key guards the API.** The key lives in `state/access.key` (0600) and never comes from the server: `open` puts it in the URL fragment, which the browser sends nowhere, and the page keeps it in local storage. Another container or local process that fetches the page still cannot use the API. The Host, Origin and same-site checks stay, for browsers.
-- **Working state** lives in `state/` (git-ignored, private to your user): extraction jobs, chats, the search vectors, both keys, and `tmp/`, where the commit gate exports the vault for checking. That keeps it on disk, not in the container's memory.
+- **Working state** lives in `state/` (git-ignored, private to your user): the FIFO queue (`queue.sqlite`), extraction jobs, chats, the search vectors, your model choices (`settings.json`), both keys, and `tmp/`, where the commit gate exports the vault for checking. That keeps it on disk, not in the container's memory.
+- **A durable FIFO queue, not a broker.** Each addition is written to SQLite in `state/` before the page answers. One committer drains it oldest first and resumes after a restart. There is no extra container, no network and no extra memory.
 - **Hardening:**
   - both containers run read-only, as non-root, with every Linux capability dropped and `no-new-privileges`, under memory and process limits;
   - the app runs as your Mac user;
@@ -88,7 +89,7 @@ BRAIN_VAULT_HOST=$PWD/.test/vault BRAIN_PORT=8799 BRAIN_STATE_HOST=$PWD/.test/st
 | `app/server.py` | The server: extraction, model calls, checks, vault writes, search and answer endpoints |
 | `app/rag.py` | Local retrieval: chunking, keyword and meaning search, answer prompt, citation check |
 | `app/static/` | The page (MH3 brand), its fonts and the vendored d3-force bundle |
-| `app/prompts/extract.txt` | The extraction instructions given to the model |
+| `app/prompts/` | Instructions for the models: extraction (`extract.txt`, `extract-research.txt`), filing decisions (`decide.txt`), people (`people.txt`) and typed instructions (`update.txt`) |
 | `app/config.json` | Models, limits and the data boundary (`allow_cloud: false`) |
 | `relay/relay.py` | The relay: a plain forward for the page and an allowlist filter for Ollama |
 | `Dockerfile`, `compose.yaml`, `requirements.txt` | The image, the two services and the pinned dependencies |

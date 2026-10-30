@@ -45,5 +45,20 @@
     "answer_seconds": 180,
     "query_timeout": 3,
     "relative_similarity": 0.8
+  },
+  "auto": {
+    "_comment": "Drop intake: rules set a floor, the decision model judges above it, the gates verify, and every drop is one commit that Undo reverses.",
+    "decision_model": "jan-v1:4b",
+    "decision_seconds": 240,
+    "keep_alive": "5m",
+    "num_ctx": 12288,
+    "notes_per_call": 6,
+    "client_domains": ["engagement-ora", "energy-neso"],
+    "client_markers": ["confidential", "commercial in confidence", "official-sensitive", "official sensitive",
+                       "do not distribute", "not for distribution", "under nda", "restricted", "internal use only"],
+    "duplicate_similarity": 0.93,
+    "domain_margin": 0.03,
+    "filed_status": "draft",
+    "register_people": true
   }
 }

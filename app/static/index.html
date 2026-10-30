@@ -612,6 +612,91 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
 .result__snippet { font-size: 0.86rem; color: var(--mh-fg-body); overflow-wrap: anywhere; }
 mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); border-radius: 3px; padding: 0 2px; }
 
+/* Drop: one box in, a feed out */
+
+.settings { display: flex; flex-direction: column; gap: var(--mh-space-4); max-width: 860px; }
+.role { display: grid; gap: var(--mh-space-2); grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: start; padding: var(--mh-space-3) 0; border-top: 1px solid var(--mh-border-subtle); }
+.role:first-of-type { border-top: 0; }
+@media (max-width: 720px) { .role { grid-template-columns: minmax(0, 1fr); } }
+.role__name { font-weight: 600; color: var(--mh-fg-default); }
+.tab--more { margin-left: auto; color: var(--mh-fg-meta); }
+.drop { display: grid; gap: var(--mh-space-5); grid-template-columns: minmax(0, 1fr); max-width: 860px; }
+.drop__box { display: flex; flex-direction: column; gap: var(--mh-space-3); }
+.drop__box.is-over { outline: 2px dashed var(--mh-border-strong); outline-offset: 4px; }
+.drop__text { min-height: 7.5rem; }
+.drop__bar { display: flex; flex-wrap: wrap; gap: var(--mh-space-3); align-items: center; justify-content: space-between; }
+.drop__files { font-size: 0.86rem; color: var(--mh-fg-body); }
+.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mh-space-3); }
+.feed__item { display: flex; flex-direction: column; gap: var(--mh-space-2); padding: var(--mh-space-3) var(--mh-space-4); border: 1px solid var(--mh-border-subtle); border-radius: var(--mh-radius-tile); background: var(--mh-bg-surface); }
+.feed__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--mh-space-2); }
+.feed__name { font-weight: 600; color: var(--mh-fg-default); overflow-wrap: anywhere; }
+.feed__msg { font-size: 0.9rem; color: var(--mh-fg-body); }
+.feed__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--mh-space-1-5); font-size: 0.88rem; }
+.feed__list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--mh-space-2); }
+.feed__list a { color: var(--mh-fg-accent); overflow-wrap: anywhere; }
+.feed__why { flex-basis: 100%; font-size: 0.8rem; color: var(--mh-fg-meta); padding-left: var(--mh-space-4); }
+.feed__list .input { max-width: 16rem; min-height: var(--mh-size-control-sm); }
+.feed__actions { display: flex; flex-wrap: wrap; gap: var(--mh-space-2); }
+.feed__label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mh-fg-meta); }
+.op--done { color: var(--mh-fg-default); }
+.op--failed > span:first-child, .op--cancelled > span:first-child, .op--reverted > span:first-child { color: var(--mh-fg-meta); text-decoration: line-through; }
+
+/* Search home: one box; everything else appears only when it is needed */
+.topbar { background: var(--mh-bg-canvas); color: var(--mh-fg-default); box-shadow: none; border-bottom: 1px solid var(--mh-border-subtle); }
+.topbar :focus-visible { outline-color: var(--mh-focus-ring); }
+.topbar__inner { position: relative; padding-top: var(--mh-space-2); padding-bottom: var(--mh-space-2); }
+.topbar .chip { border-color: var(--mh-border-default); color: var(--mh-fg-body); background: var(--mh-bg-surface); }
+.topbar .btn--inverse { color: var(--mh-fg-body); border-color: var(--mh-border-default); background: var(--mh-bg-surface); }
+.topbar .btn--inverse:hover { background: var(--mh-bg-subtle); }
+.chip[hidden], .intro, #tabBar { display: none; }
+button.chip { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
+button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-default); }
+.menu { position: absolute; right: var(--mh-gutter); top: calc(100% + var(--mh-space-1)); z-index: var(--mh-z-dropdown); min-width: 220px; display: flex; flex-direction: column; padding: var(--mh-space-1-5); background: var(--mh-bg-surface); border: 1px solid var(--mh-border-default); border-radius: var(--mh-radius-card); box-shadow: var(--mh-shadow-md); }
+.menu[hidden] { display: none; }
+.menu__item { appearance: none; border: 0; background: var(--mh-bg-surface); font: inherit; font-size: 0.9rem; text-align: left; color: var(--mh-fg-default); padding: var(--mh-space-2) var(--mh-space-3); min-height: var(--mh-size-target-min); border-radius: var(--mh-radius-tile); cursor: pointer; }
+.menu__item:hover, .menu__item:focus-visible { background: var(--mh-bg-subtle); }
+.menu__sep { height: 1px; margin: var(--mh-space-1) var(--mh-space-2); background: var(--mh-border-subtle); }
+.topbar .brand { color: var(--mh-fg-default); }
+.back { margin-bottom: var(--mh-space-4); }
+.home .results { gap: var(--mh-space-5); }
+.home .result { padding: 0; border: 0; border-radius: 0; background: var(--mh-bg-canvas); gap: var(--mh-space-1); }
+.home .result.is-cited { background: var(--mh-bg-canvas); }
+.home .result.is-cited .result__num { color: var(--mh-fg-accent); font-weight: 700; }
+.home .result__title { font-size: 1.05rem; color: var(--mh-fg-accent); }
+.home .result__snippet { font-size: 0.9rem; line-height: 1.55; }
+.home .result .btn { min-height: var(--mh-size-target-min); padding: 0 var(--mh-space-2); border-color: transparent; background: var(--mh-bg-canvas); font-size: 0.78rem; }
+.home .result .btn:hover { background: var(--mh-bg-subtle); }
+.home #askAnswer { border-color: var(--mh-border-default); }
+.back[hidden] { display: none; }
+.home { display: flex; flex-direction: column; gap: var(--mh-space-6); }
+.home__hero { width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--mh-space-3); padding-top: clamp(2rem, 16vh, 10rem); }
+.home.has-query .home__hero { padding-top: 0; }
+.home__mark { margin: 0 0 var(--mh-space-3); text-align: center; font-size: clamp(1.7rem, 3.2vw, 2.3rem); font-weight: 600; letter-spacing: -0.015em; color: var(--mh-fg-default); }
+.home.has-query .home__mark { display: none; }
+.search { display: flex; align-items: flex-end; gap: var(--mh-space-2); padding: var(--mh-space-1-5) var(--mh-space-1-5) var(--mh-space-1-5) var(--mh-space-4); background: var(--mh-bg-surface); border: 1px solid var(--mh-border-control); border-radius: var(--mh-radius-dialog); box-shadow: var(--mh-shadow-sm); }
+.search:focus-within { outline: 2px solid var(--mh-focus-ring); outline-offset: 2px; box-shadow: var(--mh-shadow-md); }
+.search__icon { align-self: center; display: inline-flex; color: var(--mh-fg-meta); }
+.search__icon svg { width: 20px; height: 20px; }
+.search__input { flex: 1 1 auto; min-width: 0; border: 0; outline: none; resize: none; background: var(--mh-bg-surface); color: var(--mh-fg-default); font: inherit; font-size: 1.1rem; line-height: 1.5; padding: var(--mh-space-2) 0; min-height: 2.75rem; max-height: 45vh; overflow-y: auto; }
+.search__input::placeholder { color: var(--mh-fg-muted); }
+.search__actions { display: flex; gap: var(--mh-space-1-5); align-items: center; flex: none; }
+.btn--icon { padding: 0; width: var(--mh-size-control-md); justify-content: center; }
+.btn--icon svg { width: 18px; height: 18px; }
+.search__hint { margin: 0; text-align: center; font-size: 0.8rem; color: var(--mh-fg-meta); }
+.search__hint kbd { font-family: var(--mh-font-mono); font-size: 0.74rem; padding: 1px 6px; border: 1px solid var(--mh-border-default); border-radius: var(--mh-radius-tooltip); background: var(--mh-bg-surface); color: var(--mh-fg-body); }
+.search__filters { justify-content: center; }
+.home:not(.has-query) .search__filters { display: none; }
+.search__filters .check { font-weight: 500; font-size: 0.8rem; color: var(--mh-fg-body); }
+.home__results { width: 100%; max-width: 760px; margin: 0 auto; }
+.home:not(.has-query) .home__results { display: none; }
+.home .ask-split { grid-template-columns: minmax(0, 1fr); }
+.home:not(.has-answer) #askAnswer { display: none; }
+.veil { position: fixed; inset: 0; z-index: var(--mh-z-overlay); display: grid; place-items: center; padding: var(--mh-space-6); background: var(--mh-bg-canvas); opacity: 0.96; }
+.veil[hidden] { display: none; }
+.veil__box { display: flex; flex-direction: column; align-items: center; gap: var(--mh-space-2); padding: var(--mh-space-12) var(--mh-space-8); border: 2px dashed var(--mh-border-strong); border-radius: var(--mh-radius-dialog); color: var(--mh-fg-default); font-size: 1.15rem; font-weight: 600; }
+.veil__box svg { width: 32px; height: 32px; color: var(--mh-fg-accent); }
+.panel-narrow { max-width: 860px; }
+
 /* Footer */
 .footer { border-top: 1px solid var(--mh-border-default); }
 .footer__inner { max-width: var(--mh-size-container-wide); margin: 0 auto; padding: var(--mh-space-5) var(--mh-gutter); display: flex; flex-wrap: wrap; gap: var(--mh-space-3); justify-content: space-between; font-size: 0.78rem; color: var(--mh-fg-meta); }
@@ -629,7 +714,22 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
       <span class="chip" id="chipLocal">Local model: checking</span>
       <span class="chip" id="chipCloud">Cloud: checking</span>
       <span class="chip" id="chipVault" role="button" tabindex="0">Vault: checking</span>
-      <button class="btn btn--sm btn--inverse" id="themeBtn" type="button">Theme: system</button>
+      <button class="chip" id="activityBtn" type="button" hidden></button>
+      <button class="btn btn--sm btn--inverse" id="menuBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menuPop">Menu</button>
+    </div>
+    <div class="menu" id="menuPop" hidden>
+      <button class="menu__item" type="button" data-tab="tabAsk">Search</button>
+      <button class="menu__item" type="button" data-tab="tabActivity">Activity</button>
+      <button class="menu__item" type="button" data-tab="tabSettings">Settings</button>
+      <div class="menu__sep" role="separator"></div>
+      <button class="menu__item" type="button" data-tab="tabPeople">People</button>
+      <button class="menu__item" type="button" data-tab="tabResearch">Research</button>
+      <button class="menu__item" type="button" data-tab="tabGraph">Graph</button>
+      <button class="menu__item" type="button" data-tab="tabInbox">Inbox</button>
+      <button class="menu__item" type="button" data-tab="tabIntake">Files (review each note)</button>
+      <button class="menu__item" type="button" data-tab="tabChat">Chat (review each note)</button>
+      <div class="menu__sep" role="separator"></div>
+      <button class="menu__item" id="themeBtn" type="button">Theme: system</button>
     </div>
   </div>
 </header>
@@ -637,13 +737,15 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
 <main id="main" class="shell">
   <section class="intro stack stack--tight">
     <p class="eyebrow eyebrow--accent">Second brain</p>
-    <h1>Drop material, keep the knowledge</h1>
-    <p class="lede" id="lede">Text is read on this Mac and turned into draft notes by a local model. Drafts land in <code>00 Inbox</code>; promote each one when it is right.</p>
+    <h1>Drop it in. The brain files it.</h1>
+    <p class="lede">Everything is read and filed on this Mac. Each drop is one commit you can undo.</p>
   </section>
 
-  <div class="tabs" role="tablist" aria-label="Views">
-    <button class="tab" role="tab" id="tabChat" aria-controls="panelChat" aria-selected="true" type="button">Chat</button>
-    <button class="tab" role="tab" id="tabAsk" aria-controls="panelAsk" aria-selected="false" tabindex="-1" type="button">Ask</button>
+  <div class="tabs is-collapsed" role="tablist" aria-label="Views" id="tabBar">
+    <button class="tab" role="tab" id="tabActivity" aria-controls="panelActivity" aria-selected="false" tabindex="-1" type="button">Activity</button>
+    <button class="tab" role="tab" id="tabSettings" aria-controls="panelSettings" aria-selected="false" tabindex="-1" type="button">Settings</button>
+    <button class="tab" role="tab" id="tabChat" aria-controls="panelChat" aria-selected="false" tabindex="-1" type="button">Chat</button>
+    <button class="tab" role="tab" id="tabAsk" aria-controls="panelAsk" aria-selected="true" type="button">Search</button>
     <button class="tab" role="tab" id="tabIntake" aria-controls="panelIntake" aria-selected="false" tabindex="-1" type="button">Files</button>
     <button class="tab" role="tab" id="tabInbox" aria-controls="panelInbox" aria-selected="false" tabindex="-1" type="button">Inbox<span class="count" id="inboxCount"></span></button>
     <button class="tab" role="tab" id="tabPeople" aria-controls="panelPeople" aria-selected="false" tabindex="-1" type="button">People</button>
@@ -651,7 +753,28 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     <button class="tab" role="tab" id="tabGraph" aria-controls="panelGraph" aria-selected="false" tabindex="-1" type="button">Graph</button>
   </div>
 
-  <section id="panelChat" role="tabpanel" aria-labelledby="tabChat" class="chat">
+  <button class="btn btn--sm btn--ghost back" id="backHome" type="button" hidden>&larr; Search</button>
+
+  <section id="panelActivity" role="tabpanel" aria-labelledby="tabActivity" class="stack panel-narrow" hidden>
+    <div class="stack stack--tight"><p class="eyebrow">Activity</p><h2 class="card__title">What happened to what you added</h2>
+      <p class="meta">Each addition is one commit with Undo. Anything the brain was unsure of waits here with the reason.</p></div>
+    <ol class="feed" id="feed"></ol>
+  </section>
+
+  <section id="panelSettings" role="tabpanel" aria-labelledby="tabSettings" class="settings panel-narrow" hidden>
+    <form class="card stack" id="settingsForm" novalidate>
+      <div class="stack stack--tight"><p class="eyebrow">Models</p><h2 class="card__title">Which model does which job</h2>
+        <p class="meta">Only models installed in Ollama on this Mac are listed; cloud models never are. Your choices are kept in Brain Intake's own state and override <code>config.json</code>.</p></div>
+      <div id="roleList"></div>
+      <div class="cluster cluster--between">
+        <button class="btn btn--ghost" id="settingsReset" type="button">Use the defaults</button>
+        <button class="btn btn--primary" id="settingsSave" type="submit">Save</button>
+      </div>
+      <div id="settingsAlert" aria-live="assertive"></div>
+    </form>
+  </section>
+
+  <section id="panelChat" role="tabpanel" aria-labelledby="tabChat" class="chat" hidden>
     <aside class="card stack" aria-labelledby="chatsTitle">
       <div class="cluster cluster--between"><div class="stack stack--tight"><p class="eyebrow">Conversations</p><h2 class="card__title" id="chatsTitle">Chats</h2></div>
         <button class="btn btn--sm" id="newChatBtn" type="button">New chat</button></div>
@@ -683,27 +806,39 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     </div>
   </section>
 
-  <section id="panelAsk" role="tabpanel" aria-labelledby="tabAsk" class="stack stack--loose" hidden>
-    <form class="card stack" id="askForm" novalidate>
-      <div class="stack stack--tight"><p class="eyebrow">Ask your brain</p><h2 class="card__title">Ask in plain English</h2></div>
-      <div class="ask-row">
-        <label class="visually-hidden" for="askInput">Question</label>
-        <input class="input ask-input" type="search" id="askInput" placeholder="What stops a release when reliability is poor?" autocomplete="off">
-        <button class="btn btn--primary" id="askBtn" type="submit">Ask</button>
+  <section id="panelAsk" role="tabpanel" aria-labelledby="tabAsk" class="home">
+    <div class="home__hero">
+      <h1 class="home__mark">Your brain</h1>
+      <form class="search" id="askForm" novalidate>
+        <span class="search__icon" id="searchIcon"></span>
+        <label class="visually-hidden" for="askInput">Search, ask or tell your brain</label>
+        <textarea class="search__input" id="askInput" rows="1" autocomplete="off" spellcheck="true" placeholder="Search or ask your brain"></textarea>
+        <div class="search__actions">
+          <input class="visually-hidden" type="file" id="tellFiles" multiple>
+          <button class="btn btn--sm btn--ghost btn--icon" id="attachBtn" type="button" aria-label="Add files" title="Add files"></button>
+          <button class="btn btn--sm btn--ghost" id="tellBtn" type="button" title="Add it to your brain (Command or Control and Enter)">Tell</button>
+          <button class="btn btn--sm btn--primary" id="askBtn" type="submit" title="Ask (Enter)">Ask</button>
+        </div>
+      </form>
+      <p class="search__hint" id="lede"><kbd>Enter</kbd> asks &middot; <kbd>&#8984; Enter</kbd> tells &middot; drop files anywhere</p>
+      <div class="cluster search__filters">
+        <label class="check"><input type="checkbox" id="askClient">Client notes</label>
+        <label class="check"><input type="checkbox" id="askInbox">Inbox drafts</label>
+        <label class="check"><input type="checkbox" id="askPeople">People</label>
+        <label class="check" title="When telling: treat what you add as client material"><input type="checkbox" id="tellClient">Telling client material</label>
       </div>
-      <div class="cluster">
-        <label class="check"><input type="checkbox" id="askClient">Include client and unlabelled notes</label>
-        <label class="check"><input type="checkbox" id="askInbox">Include inbox drafts</label>
-        <label class="check"><input type="checkbox" id="askPeople">Include people</label>
-      </div>
+      <div id="homeNotice" aria-live="polite"></div>
+      <div id="tellAlert" aria-live="assertive"></div>
+    </div>
+    <div class="home__results">
       <p class="field__hint" id="askStatus" aria-live="polite"></p>
-    </form>
-    <div class="ask-split">
-      <section class="card stack" id="askAnswer" aria-live="polite" aria-labelledby="askAnswerTitle"></section>
-      <section class="card stack" aria-labelledby="askResultsTitle">
-        <div class="cluster cluster--between"><h2 class="card__title" id="askResultsTitle">Matching notes</h2><span class="meta mono" id="askMeta"></span></div>
-        <ol class="results" id="askResults"></ol>
-      </section>
+      <div class="ask-split">
+        <section class="card stack" id="askAnswer" aria-live="polite" aria-labelledby="askAnswerTitle"></section>
+        <section class="stack" aria-labelledby="askResultsTitle">
+          <div class="cluster cluster--between"><h2 class="card__title" id="askResultsTitle">From your notes</h2><span class="meta mono" id="askMeta"></span></div>
+          <ol class="results" id="askResults"></ol>
+        </section>
+      </div>
     </div>
   </section>
 
@@ -876,6 +1011,8 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   </section>
 </main>
 
+<div class="veil" id="veil" hidden><div class="veil__box"><span id="veilIcon"></span>Drop to add to your brain<span class="meta">Read and filed on this Mac</span></div></div>
+
 <footer class="footer">
   <div class="footer__inner">
     <span>&copy; 2023&ndash;2026 Mehedi Hassan &middot; London, UK</span>
@@ -913,6 +1050,8 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     dot: [['circle', { cx: '12', cy: '12', r: '10' }], ['circle', { cx: '12', cy: '12', r: '1' }]],
     inbox: [['polyline', { points: '22 12 16 12 14 15 10 15 8 12 2 12' }], ['path', { d: 'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z' }]],
     x: [['path', { d: 'M18 6 6 18' }], ['path', { d: 'm6 6 12 12' }]],
+    search: [['circle', { cx: '11', cy: '11', r: '7' }], ['path', { d: 'm20 20-3.5-3.5' }]],
+    clip: [['path', { d: 'm21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48' }]],
     brain: [['rect', { x: '3', y: '3', width: '7', height: '7', rx: '1.5' }], ['rect', { x: '14', y: '3', width: '7', height: '7', rx: '1.5' }], ['rect', { x: '3', y: '14', width: '7', height: '7', rx: '1.5' }], ['rect', { x: '14', y: '14', width: '7', height: '7', rx: '1.5' }]]
   };
   function icon(name) {
@@ -976,15 +1115,31 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   $('dropIcon').appendChild(icon('upload'));
 
   // ---------------------------------------------------------------- tabs
-  const tabs = [$('tabChat'), $('tabAsk'), $('tabIntake'), $('tabInbox'), $('tabPeople'), $('tabResearch'), $('tabGraph')];
+  const tabs = [$('tabAsk'), $('tabActivity'), $('tabSettings'), $('tabChat'), $('tabIntake'), $('tabInbox'), $('tabPeople'), $('tabResearch'), $('tabGraph')];
+  function menuOpen(open) {
+    $('menuPop').hidden = !open; $('menuBtn').setAttribute('aria-expanded', String(open));
+    if (open) { const first = $('menuPop').querySelector('.menu__item'); if (first) first.focus(); }
+  }
+  $('menuBtn').addEventListener('click', (e) => { e.stopPropagation(); menuOpen($('menuPop').hidden); });
+  $('menuPop').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (!b) return; menuOpen(false); selectTab($(b.dataset.tab)); });
+  document.addEventListener('click', (e) => { if (!$('menuPop').hidden && !$('menuPop').contains(e.target)) menuOpen(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!$('menuPop').hidden) { menuOpen(false); $('menuBtn').focus(); }
+    else if ($('tabAsk').getAttribute('aria-selected') !== 'true' && !document.querySelector('dialog[open]')) selectTab($('tabAsk'));
+  });
+  $('backHome').addEventListener('click', () => selectTab($('tabAsk')));
   function selectTab(t) {
     for (const x of tabs) { const on = x === t; x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; $(x.getAttribute('aria-controls')).hidden = !on; }
     if (t === $('tabInbox')) loadInbox();
     if (t === $('tabChat')) loadChats();
     if (t === $('tabAsk')) { renderAskStatus(); $('askInput').focus(); }
+    $('backHome').hidden = t === $('tabAsk');
+    if (t === $('tabActivity')) loadFeed();
     if (t === $('tabPeople')) loadPeople();
     if (t === $('tabResearch')) loadResearch();
     if (t === $('tabGraph')) graphShow(); else graphHide();
+    if (t === $('tabSettings')) loadSettings();
   }
   tabs.forEach((t, i) => {
     t.addEventListener('click', () => selectTab(t));
@@ -993,7 +1148,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
 
   // ---------------------------------------------------------------- status
   let status = null;
-  function chip(el, ic, text) { el.replaceChildren(icon(ic), text); }
+  function chip(el, ic, text) { el.replaceChildren(icon(ic), text); el.hidden = ic === 'check' || ic === 'lock'; }   // only problems show
   async function lintPanel() {
     if (!status || !status.vault.lint_errors) return;
     let d; try { d = await api('/api/lint'); } catch (err) { return; }
@@ -1037,9 +1192,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     else chip($('chipVault'), 'check', 'Vault: lint clean');
     $('inboxCount').textContent = v.inbox ? String(v.inbox) : '';
     $('maxMb').textContent = status.limits.max_upload_mb;
-    $('lede').replaceChildren('Text is read on this Mac and turned into draft notes by ', h('code', { text: L.default }),
-      status.cloud.allowed ? '. Cloud models may be used for material that is not client.' : ', locally. Nothing leaves the machine.',
-      ' Drafts land in ', h('code', { text: '00 Inbox' }), '; promote each one when it is right.');
+    renderHomeHint();
     fillSelects();
     updateProcess();
     if (typeof renderAskStatus === 'function' && !$('panelAsk').hidden) renderAskStatus();
@@ -2183,7 +2336,21 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   }
   const askParams = () => ({ client: $('askClient').checked, inbox: $('askInbox').checked, people: $('askPeople').checked });
   let typeTimer = null, answered = null;           // answered: the results list the current answer cites
-  $('askInput').addEventListener('input', () => { clearTimeout(typeTimer); typeTimer = setTimeout(liveSearch, 250); });
+  function onQuery() {
+    const el = $('askInput'); el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.45) + 'px';
+    const has = !!el.value.trim();
+    $('panelAsk').classList.toggle('has-query', has);
+    if (!has) { $('panelAsk').classList.remove('has-answer'); answered = null; }
+    clearTimeout(typeTimer); typeTimer = setTimeout(liveSearch, 250);
+  }
+  $('askInput').addEventListener('input', onQuery);
+  $('askInput').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+    e.preventDefault();
+    if (e.metaKey || e.ctrlKey) tellText();
+    else if ($('askInput').value.trim().length > 500) toast('info', 'That is long for a question. To add it to your brain, press Command and Enter, or Tell.');
+    else $('askForm').requestSubmit();
+  });
   ['askClient', 'askInbox', 'askPeople'].forEach((id) => $(id).addEventListener('change', liveSearch));
   async function liveSearch() {
     if (askAbort) return;                                          // an answer is streaming; its sources stay on screen
@@ -2243,6 +2410,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
   $('askForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const q = $('askInput').value.trim(); if (!q) return;
+    $('panelAsk').classList.add('has-query', 'has-answer');
     if (askAbort) askAbort.abort();
     const ctl = new AbortController(); askAbort = ctl; ++askSeq; clearTimeout(typeTimer); answered = null;
     const box = $('askAnswer'); box.classList.remove('is-stale'); const live = h('p', { class: 'answer-text' });
@@ -2293,6 +2461,212 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
     selectNode(path); setTimeout(() => centreOn(path), 60);
   }
   askEmpty();
+
+  // ---------------------------------------------------------------- tell: add to the brain, from the box or by dropping
+  const quick = { timer: null, sending: false, toast: null };
+  const DROP_STATE = { queued: ['neutral', 'Waiting'], extracting: ['info', 'Reading'], generating: ['info', 'Extracting'],
+    deciding: ['info', 'Deciding'], filing: ['info', 'Filing'], filed: ['success', 'Filed'], applied: ['success', 'Changed'],
+    confirm: ['warning', 'Check'], question: ['warning', 'Unclear'], stuck: ['warning', 'Not filed'], failed: ['danger', 'Failed'],
+    cancelled: ['neutral', 'Cancelled'], interrupted: ['warning', 'Interrupted'], undone: ['neutral', 'Undone'] };
+  const DROP_ACTIVE = new Set(['queued', 'extracting', 'generating', 'deciding', 'filing']);
+  $('searchIcon').appendChild(icon('search')); $('attachBtn').appendChild(icon('clip')); $('veilIcon').appendChild(icon('upload'));
+  function renderHomeHint() {
+    if (!status) return;
+    const a = status.auto || {};
+    if (!status.local.up) setAlert($('homeNotice'), 'danger', 'Ollama is not running, so nothing can be read or answered. Start Ollama.');
+    else if (!a.installed) setAlert($('homeNotice'), 'warning', `The decision model ${a.decision_model} is not installed, so anything you add waits for a look. Settings lets you choose another.`);
+    else $('homeNotice').replaceChildren();
+  }
+  function toast(level, text) {
+    clearTimeout(quick.toast); setAlert($('tellAlert'), level, text);
+    if (level === 'success') quick.toast = setTimeout(() => $('tellAlert').replaceChildren(), 7000);
+  }
+  function textName(text) {
+    const first = text.trim().split('\n')[0].replace(/[^\p{L}\p{N} '’-]+/gu, ' ').trim().split(/\s+/).slice(0, 7).join(' ');
+    return (first || 'Note') + '.md';
+  }
+  async function sendDrop(name, body, typed) {
+    const q = new URLSearchParams({ name });
+    if ($('tellClient').checked) q.set('client', '1');
+    if (typed) q.set('typed', '1');
+    return api('/api/drop?' + q.toString(), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body });
+  }
+  async function tellText() {
+    const text = $('askInput').value;
+    if (!text.trim() || quick.sending) return;
+    quick.sending = true; $('tellBtn').setAttribute('aria-disabled', 'true');
+    try {
+      await sendDrop(textName(text), new Blob([text], { type: 'text/markdown' }), true);
+      $('askInput').value = ''; onQuery();
+      toast('success', 'Added. It is being read on this Mac; Activity shows what was filed or changed.');
+    } catch (err) { toast('danger', err.message); }
+    finally { quick.sending = false; $('tellBtn').removeAttribute('aria-disabled'); }
+    loadFeed();
+  }
+  async function tellFiles(list) {
+    const files = [...list]; if (!files.length) return;
+    const max = (status ? status.limits.max_upload_mb : 50) * 1048576;
+    const errors = []; let sent = 0;
+    for (const f of files) {
+      if (f.size > max) { errors.push(`${f.name} is larger than ${fmtSize(max)}.`); continue; }
+      try { await sendDrop(f.name, f, false); sent++; } catch (err) { errors.push(`${f.name}: ${err.message}`); }
+    }
+    if (errors.length) toast('danger', (sent ? `Added ${sent}; ` : '') + errors.join('\n'));
+    else toast('success', `Added ${sent} file${sent === 1 ? '' : 's'}. Activity shows what was filed.`);
+    loadFeed();
+  }
+  $('tellBtn').addEventListener('click', tellText);
+  $('attachBtn').addEventListener('click', () => $('tellFiles').click());
+  $('tellFiles').addEventListener('change', (e) => { tellFiles(e.target.files); e.target.value = ''; });
+  // Drop anywhere, except on the Files screen, which keeps its own drop zone and review.
+  let dragDepth = 0;
+  const hasFiles = (e) => e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files');
+  const filesScreen = () => !$('panelIntake').hidden;
+  window.addEventListener('dragenter', (e) => { if (!hasFiles(e) || filesScreen()) return; dragDepth++; $('veil').hidden = false; });
+  window.addEventListener('dragleave', (e) => { if (!hasFiles(e) || filesScreen()) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('veil').hidden = true; });
+  window.addEventListener('drop', (e) => {
+    if (!hasFiles(e) || filesScreen()) return;
+    e.preventDefault(); dragDepth = 0; $('veil').hidden = true; tellFiles(e.dataTransfer.files);
+  });
+  function activityPill(list) {
+    const busy = list.filter((d) => DROP_ACTIVE.has(d.state)).length;
+    const look = list.reduce((n, d) => n + d.held.filter((x) => x.waiting).length + (d.state === 'confirm' || d.state === 'stuck' || d.state === 'question' || (d.update && d.update.confirm && !d.update.applied) ? 1 : 0), 0);
+    const b = $('activityBtn');
+    const words = [busy ? `Working on ${busy}` : '', look ? `${look} need${look === 1 ? 's' : ''} a look` : ''].filter(Boolean);
+    b.hidden = !words.length;
+    b.replaceChildren(icon(look ? 'warn' : 'dot'), words.join(' · '));
+  }
+  $('activityBtn').addEventListener('click', () => selectTab($('tabActivity')));
+
+  async function dropAct(id, act, label, btn) {
+    if (btn) btn.setAttribute('aria-disabled', 'true');
+    try { await api(`/api/drops/${encodeURIComponent(id)}/${act}`, { method: 'POST' }); }
+    catch (err) { toast('danger', `${label}: ${err.message}`); }
+    loadFeed(); loadStatus();
+  }
+  async function heldAct(name, act, btn) {
+    btn.setAttribute('aria-disabled', 'true');
+    const path = act === 'file' ? '/api/inbox/promote' : '/api/inbox/archive';
+    try { await api(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(act === 'file' ? { name, status: 'evergreen' } : { name }) }); }
+    catch (err) { toast('danger', err.message); }
+    loadFeed(); loadStatus();
+  }
+  const noteLink = (title, path) => h('a', { href: obsidianLink(path), text: title });
+  function dropItem(d) {
+    const [lvl, word] = DROP_STATE[d.state] || ['neutral', d.state];
+    const when = d.created ? d.created.slice(11, 16) + (d.created.slice(0, 10) === new Date().toISOString().slice(0, 10) ? '' : ' · ' + d.created.slice(0, 10)) : '';
+    const li = h('li', { class: 'feed__item' },
+      h('div', { class: 'feed__head' }, badge(lvl, word), h('span', { class: 'feed__name', text: d.name }),
+        h('span', { class: 'meta mono', text: when + (d.mode === 'research' ? ' · paper' : '') })),
+      h('p', { class: 'feed__msg', text: d.state === 'queued' && d.position > 1 ? `Waiting: number ${d.position} in the queue.`
+        : DROP_ACTIVE.has(d.state) && d.parts > 1 ? `${d.message} (part ${d.part} of ${d.parts})` : d.message }));
+    if (d.pending && d.pending.length) li.append(h('p', { class: 'feed__label', text: 'Waiting on these names' }), h('ul', { class: 'feed__list' },
+      ...d.pending.map((name) => {
+        const full = h('input', { class: 'input', value: name, 'aria-label': 'Full name for ' + name });
+        const resolve = async (action, btn) => {
+          btn.setAttribute('aria-disabled', 'true');
+          try { await api(`/api/drops/${encodeURIComponent(d.id)}/resolve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, action, full_name: full.value }) }); }
+          catch (err) { toast('danger', err.message); }
+          loadFeed(true);
+        };
+        return h('li', {}, full,
+          h('button', { class: 'btn btn--sm', type: 'button', onclick: (ev) => resolve('add', ev.currentTarget) }, 'Add to People'),
+          h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: (ev) => resolve('ignore', ev.currentTarget) }, 'Not someone I know'));
+      })), h('p', { class: 'meta', text: 'Nothing is filed until each is resolved, so no real name reaches the vault. Then press File again.' }));
+    if (d.filed.length) li.append(h('p', { class: 'feed__label', text: 'Filed' }), h('ul', { class: 'feed__list' },
+      ...d.filed.map((f) => h('li', {}, noteLink(f.title, f.path), h('span', { class: 'meta', text: f.domain + (f.sensitivity !== 'internal' ? ' · ' + f.sensitivity : '') })))));
+    const waiting = d.held.filter((x) => x.waiting);
+    if (waiting.length) li.append(h('p', { class: 'feed__label', text: 'Needs a look' }), h('ul', { class: 'feed__list' },
+      ...waiting.map((x) => h('li', {}, noteLink(x.title, x.path),
+        h('span', { class: 'feed__actions' },
+          h('button', { class: 'btn btn--sm', type: 'button', onclick: (ev) => heldAct(x.name, 'file', ev.currentTarget) }, 'File it'),
+          h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: (ev) => heldAct(x.name, 'discard', ev.currentTarget) }, 'Discard')),
+        h('span', { class: 'feed__why', text: x.reasons.join(' ') })))));
+    const doneHeld = d.held.length - waiting.length;
+    if (doneHeld) li.append(h('p', { class: 'meta', text: `${doneHeld} held note${doneHeld === 1 ? ' was' : 's were'} filed or discarded since.` }));
+    if (d.skipped.length) li.append(h('p', { class: 'meta', text: 'Skipped: ' + d.skipped.map((s) => `${s.title} (${s.reasons.join(' ')})`).join('; ') }));
+    const people = d.people.filter((p) => p.acronym);
+    if (people.length) li.append(h('p', { class: 'feed__label', text: 'People' }), h('ul', { class: 'feed__list' },
+      ...people.map((p) => h('li', {}, h('span', { class: 'mono', text: p.acronym }), h('span', { text: p.name }),
+        h('span', { class: 'meta', text: p.status === 'unsure' ? 'added; unsure' : p.status === 'not-known' ? 'marked not known' : 'added · ' + (p.context || '') }),
+        p.status !== 'not-known' ? h('button', { class: 'btn btn--sm btn--ghost', type: 'button', onclick: (ev) => dropAct(d.id, `people/${p.acronym}/not-known`, 'People', ev.currentTarget) }, 'Not someone I know') : null))));
+    const firstOnly = d.people.filter((p) => p.status === 'first-name-only').map((p) => p.name);
+    if (firstOnly.length) li.append(h('p', { class: 'meta', text: `Named by first name only: ${firstOnly.join(', ')}. Add their full name in People so later notes use an acronym.` }));
+    const u = d.update;
+    if (u && u.ops && u.ops.length) li.append(h('p', { class: 'feed__label', text: 'Changes' }), h('ul', { class: 'feed__list' },
+      ...u.ops.map((o) => h('li', { class: 'op--' + (o.status || 'pending') }, h('span', { text: o.describe }),
+        o.status === 'failed' ? h('span', { class: 'feed__why', text: o.error }) : null))));
+    if (u && u.rejected && u.rejected.length) li.append(h('p', { class: 'meta', text: 'Not done: ' + u.rejected.join('; ') + '.' }));
+    for (const n of d.notes) li.append(h('p', { class: 'meta', text: n }));
+    const acts = h('div', { class: 'feed__actions' });
+    const btn = (label, act, primary) => h('button', { class: 'btn btn--sm' + (primary ? ' btn--primary' : ' btn--ghost'), type: 'button', onclick: (ev) => dropAct(d.id, act, label, ev.currentTarget) }, label);
+    if (u && u.confirm && !u.applied && d.state !== 'cancelled') { acts.append(btn('Apply', 'apply', true)); acts.append(btn('Cancel', 'cancel')); }
+    if (d.commit && !d.undone) acts.append(btn('Undo', 'undo'));
+    if (u && u.ops && u.ops.some((o) => o.status === 'done' && o.revertible) && d.state !== 'undone') acts.append(btn('Undo changes', 'revert'));
+    if (d.can_refile) acts.append(btn('File again', 'file', true));
+    if (d.can_retry) acts.append(h('button', { class: 'btn btn--sm', type: 'button', onclick: async (ev) => {
+      ev.currentTarget.setAttribute('aria-disabled', 'true');
+      try { await api(`/api/jobs/${encodeURIComponent(d.id)}/retry`, { method: 'POST' }); } catch (err) { toast('danger', err.message); }
+      loadFeed(); } }, 'Run again'));
+    if (acts.childNodes.length) li.append(acts);
+    return li;
+  }
+  let feedSeen = '';
+  async function loadFeed(force) {
+    clearTimeout(quick.timer);
+    let list = [];
+    try { list = await api('/api/drops'); } catch (err) { quick.timer = setTimeout(loadFeed, 10000); return; }
+    activityPill(list);
+    const sig = JSON.stringify(list);
+    // Re-draw only when something changed, so typing a name or tapping a button is not interrupted by the poll.
+    if (sig === feedSeen && force !== true) { quick.timer = setTimeout(loadFeed, list.some((d) => DROP_ACTIVE.has(d.state)) ? 2000 : 15000); return; }
+    feedSeen = sig;
+    $('feed').replaceChildren(...(list.length ? list.map(dropItem) : [h('li', { class: 'meta', text: 'Nothing added yet. Use Tell, or drop a file anywhere on the page.' })]));
+    quick.timer = setTimeout(loadFeed, list.some((d) => DROP_ACTIVE.has(d.state)) ? 2000 : 15000);
+  }
+  loadFeed();
+
+  // ---------------------------------------------------------------- settings: models
+  let settings = null;
+  const gb = (n) => n ? (n / 1073741824).toFixed(n < 1073741824 ? 2 : 1) + ' GB' : '';
+  function roleRow(r) {
+    const sel = h('select', { class: 'select', id: 'role-' + r.role });
+    const models = settings.models || [];
+    const names = new Set(models.flatMap((m) => [m.name, ...m.aliases]));
+    for (const m of models) {
+      const bits = [m.params, m.quant, gb(m.size)].filter(Boolean).join(' · ');
+      sel.appendChild(h('option', { value: m.name, text: m.name + (bits ? '  (' + bits + ')' : '') + (m.name === r.default ? '  · default' : ''),
+        selected: m.name === r.value || m.aliases.includes(r.value) }));
+    }
+    if (!names.has(r.value)) sel.prepend(h('option', { value: r.value, text: r.value + '  (not installed)', selected: true }));
+    return h('div', { class: 'role' },
+      h('div', { class: 'stack stack--tight' }, h('label', { class: 'role__name', for: 'role-' + r.role, text: r.label }), h('span', { class: 'meta', text: r.help })),
+      sel);
+  }
+  async function loadSettings() {
+    try { settings = await api('/api/settings'); } catch (err) { setAlert($('settingsAlert'), 'danger', err.message); return; }
+    if (!settings.models) { $('roleList').replaceChildren(); setAlert($('settingsAlert'), 'danger', 'Ollama is not answering, so the installed models cannot be listed. Start Ollama.'); return; }
+    $('roleList').replaceChildren(...settings.roles.map(roleRow));
+    $('settingsAlert').replaceChildren();
+  }
+  async function saveSettings(models, confirmEmbed) {
+    try {
+      settings = await api('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models, confirm_embed: !!confirmEmbed }) });
+      $('roleList').replaceChildren(...settings.roles.map(roleRow));
+      setAlert($('settingsAlert'), 'success', 'Saved. New drops use these models from now on.');
+      loadStatus();
+    } catch (err) {
+      if (/does not look like an embedding model/.test(err.message) && window.confirm(err.message + '\n\nUse it anyway?')) return saveSettings(models, true);
+      setAlert($('settingsAlert'), 'danger', err.message);
+    }
+  }
+  $('settingsForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!settings) return;
+    const models = {}; for (const r of settings.roles) models[r.role] = $('role-' + r.role).value;
+    saveSettings(models, false);
+  });
+  $('settingsReset').addEventListener('click', () => saveSettings({}, false));
 
   loadStatus(); setInterval(loadStatus, 8000);
   loadJobs();

@@ -4,7 +4,7 @@ type: system
 domain: system
 status: evergreen
 created: 2026-10-29
-updated: 2026-10-29
+updated: 2026-10-30
 summary: "Brain Intake: a local page where dropped material becomes reviewed draft notes, filed through the vault gate."
 sensitivity: internal
 tags: [system, intake]
@@ -21,6 +21,87 @@ A single page on `http://127.0.0.1:8765` where you drop material and keep the kn
 ```
 
 It keeps running in Docker after the terminal closes; `bin/brain-intake down` stops it. Ollama must be running on the Mac (`ollama serve`, or the Ollama app). Without Docker, `bin/run-native.sh --open` runs the same app directly on the Mac.
+
+## Search, ask and tell
+
+The page opens on one box: a search engine over your own brain.
+- **Typing** searches as you go, by keyword and by meaning.
+- **Enter** asks: a short answer written only from your notes, every claim cited, with the matching notes beneath it. Client notes, inbox drafts and people stay out unless you tick them.
+- **Cmd+Enter** (or **Tell**) adds what you typed to the brain.
+- **Dropping a file anywhere** on the page adds it. The paperclip does the same.
+
+**Menu** holds Activity, Settings and the older screens. A small counter appears at the top only while something is being worked on or needs a look.
+
+## The queue
+
+Everything you add is written to a queue on disk (`state/queue.sqlite`) before the page says "Added", so you can keep adding while the committer works. One committer takes the oldest entry first, one at a time. Activity shows each one's place in the queue.
+
+If Brain Intake or Docker restarts, whatever was waiting, or half done, is taken again in its original order:
+- A drop that had already been committed is not committed twice.
+- An instruction that had already changed something is not replayed.
+
+## What happens to what you add
+
+1. **Rules come first, with no model involved.**
+   - A source with a DOI or arXiv identifier and an abstract or reference list is treated as a research paper.
+   - A short line such as "CONFIDENTIAL" or "Commercial in confidence", or a client domain, makes the notes client. So does ticking **Client material**.
+   - No model can lower these floors.
+2. **The extraction model writes the notes**, with quotations checked word for word against the source.
+3. **People join the register by themselves**, before any note is written, so every note names them by acronym.
+   - The decision model judges each name it finds: someone you know, a public figure, an author or cited person of published work, or not a person.
+   - Only people you know are added.
+   - Authors, bylines, reference lists, in-text citations ("Smith et al. (2020)") and your own name are never added.
+   - If it cannot tell, the person is added as *unsure*. A real name kept out of the vault by mistake costs one register row; one committed by mistake stays in git history.
+   - **Not someone I know** in Activity archives the row and stops that name from being added again.
+   - **Nothing is filed while a name is unresolved.** That covers a person who could not be added (the people store has edits of its own, say) and someone you know named by first name only. Activity shows **Waiting on these names**, with **Add to People** (you can complete the name) and **Not someone I know**, then **File again**. Typed text never lends its first line to a file name or commit message.
+   - The person's log gets one locked observation from the source.
+4. **The decision model decides each note.** It chooses where the note belongs, how sensitive it is (never below the floor), whether it repeats an existing note, and whether to file or hold it.
+5. **A note is filed only when every check passes:**
+   - the decision model says file;
+   - its home agrees with the extraction model's, or clearly beats the runner-up by meaning;
+   - every quotation is found in the source;
+   - it is not an inference;
+   - it is not too close to an existing note.
+
+   Anything else waits under **Needs a look**, with the reason, and **File it** or **Discard** next to it. A paper's claims wait with its literature note.
+6. **One signed commit per drop.** Filed notes go to their homes and hubs, held ones to `00 Inbox`, and the source to `_sources/`. **Undo** moves all of it into `_archive/<date>/intake-undone/` with manifest rows, and takes the hub links out. Nothing is deleted. Log entries stay, because they are locked; add a correction if one is wrong.
+
+If the decision model is not installed or does not answer, nothing is guessed: every note waits for a look. The same file dropped twice is refused while its notes are in the vault.
+
+**Typed instructions.** Typed text can also be an instruction rather than material, for example "FR is my wife, not my sister-in-law", "add to RAR's profile that…", "archive the note about Kubernetes operators" or "undo the last drop". The decision model turns it into operations from a fixed list:
+- add to or set a profile;
+- log an observation or a correction;
+- change how you know someone;
+- add or archive a person;
+- replace exact text in a note;
+- archive a note;
+- undo a drop.
+
+Each operation is checked against the real register, the notes the search found and your recent drops, and applied through the same gates.
+- **Applied at once, with Undo changes:** adding to a profile and changing how you know someone, both reversible.
+- **Wait for Apply** (an irreversible log entry or a change to a note): log entries, adding a person, replacing text in a note, archiving, undoing, and replacing a whole profile. So does any plan made from more than 500 characters, or with more than four changes.
+
+Text is replaced only in a note's body, never its frontmatter, so sensitivity cannot be lowered from here. Hubs and maps of content are never archived. Files you drop are never read as instructions; only text you type is.
+
+## Settings
+
+Choose which installed model does each job:
+- **Extraction:** the large model that reads sources.
+- **Decisions:** the small judge.
+- **Answers:** writes answers on the Ask screen.
+- **Search embeddings:** must be an embedding model; changing it rebuilds the vectors.
+
+Only models installed in Ollama on this Mac are offered; cloud models never are. Choices are kept in `state/settings.json` and override `config.json`, which is part of the image. **Use the defaults** goes back to `config.json`.
+
+The decision model is `jan-v1:4b` (Jan-v1, 4B, built on Qwen3), fetched from Hugging Face:
+
+```sh
+ollama pull hf.co/janhq/Jan-v1-4B-GGUF:Q4_K_M && ollama cp hf.co/janhq/Jan-v1-4B-GGUF:Q4_K_M jan-v1:4b
+```
+
+## More
+
+Chat, Ask, Files, Inbox, People, Research and Graph are one click away under **More**. They work as before. The Chat and Files paths also add new people to the register before drafts are made.
 
 ## Chat
 

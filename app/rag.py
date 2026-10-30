@@ -387,6 +387,38 @@ class Index:
         self.matrix, self.matrix_hashes, self.matrix_key = m, hashes, key
         return m, hashes
 
+    def neighbours(self, title, text, k=3, timeout=30):
+        """For filing decisions made on this Mac: the k indexed notes closest in meaning to a draft, and a score per
+        domain (the mean of its three closest chunks, inbox drafts left out). People notes never take part.
+        None when there are no vectors yet or the embedding model does not answer."""
+        with self.lock: model, dim, ready = self.vec_model, self.dim, bool(self.vec)
+        if not model or not ready: return None
+        body = (text or '')[:2000]
+        doc = f'title: {title} | text: {body}' if model.split(':')[0].startswith('embeddinggemma') else f'{title}\n{body}'
+        try: v = self._unit(self.embed(model, [doc], timeout=timeout)[0])
+        except Exception: return None
+        if v is None or (dim and len(v) != dim): return None
+        with self.lock:
+            snap = self.snap
+            matrix, hashes = self._dense_matrix(snap)
+        if matrix is None or not hashes: return None
+        by_hash = {c['hash']: c for c in snap.chunks}
+        sims = (matrix @ v).tolist() if np is not None else [sum(a * b for a, b in zip(row, v)) for row in matrix]
+        best, per_domain = {}, {}
+        for s, hsh in zip(sims, hashes):
+            c = by_hash.get(hsh)
+            if c is None or c['meta'].get('people') or c['path'].startswith(('_archive/', '_sources/')): continue
+            if s > best.get(c['path'], (-2.0, ''))[0]: best[c['path']] = (s, c['meta']['title'])
+            d = c['meta']['domain']
+            if not c['meta']['inbox'] and d and d not in ('system', 'people'): per_domain.setdefault(d, []).append(s)
+        notes = sorted(((s, p, t) for p, (s, t) in best.items()), reverse=True)[:k]
+        domains = {}
+        for d, vals in per_domain.items():
+            top = sorted(vals, reverse=True)[:3]
+            domains[d] = sum(top) / len(top)
+        return {'notes': [{'similarity': round(s, 4), 'path': p, 'title': t} for s, p, t in notes],
+                'domains': dict(sorted(((d, round(s, 4)) for d, s in domains.items()), key=lambda x: -x[1]))}
+
     # ---------------------------------------------------------------- search
     @staticmethod
     def allowed(c, include_client, include_inbox, include_people=False):
