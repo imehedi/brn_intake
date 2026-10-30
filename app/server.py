@@ -1585,6 +1585,20 @@ def list_inbox():
     return out
 
 
+def relink(text, old_dir, new_dir):
+    """Relative Markdown links keep pointing at the same file when a note moves folder, inside or outside the vault."""
+    def sub(m):
+        t = m.group(1); raw = t[1:-1] if t.startswith('<') else t
+        path = raw.replace('%20', ' ')
+        target = os.path.normpath(os.path.join(VAULT, old_dir, path))
+        new = os.path.relpath(target, os.path.join(VAULT, new_dir)).replace(os.sep, '/')
+        new = f'<{new}>' if t.startswith('<') else new.replace(' ', '%20')
+        return m.group(0).replace(t, new, 1)
+    fm = brain.FM.match(text)
+    head, body = (text[:fm.end()], text[fm.end():]) if fm else ('', text)
+    return head + brain.MDLINK.sub(sub, body)
+
+
 def promote(payload):
     p = inbox_path(payload.get('name'))
     status = payload.get('status', 'evergreen')
@@ -1620,7 +1634,10 @@ def promote(payload):
         try:
             n = {'path': plan['target'], 'abs': target, 'text': brain.read(target)[0], 'crlf': False}
             brain.set_fields(n, {'status': status}, replace=True)
-            brain.write_atomic(hub, insert_link(hub_before, plan['section'], line))
+            moved = relink(brain.read(target)[0], os.path.dirname(rel), os.path.dirname(plan['target']))
+            if moved != brain.read(target)[0]: brain.write_atomic(target, moved)
+            already = re.search(r'\[\[' + re.escape(title) + r'(?:\\?\|[^\]]*)?\]\]', hub_before)
+            brain.write_atomic(hub, hub_before if already else insert_link(hub_before, plan['section'], line))
             sha = commit([plan['target'], plan['hub']], f'promote: {title} to {os.path.dirname(plan["target"])}, linked from its hub')
         except BaseException:
             # Undo everything this request did: index, file location, file content, hub, generated index.
