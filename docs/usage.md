@@ -27,10 +27,12 @@ It keeps running in Docker after the terminal closes; `bin/brain-intake down` st
 The page opens on one box: a search engine over your own brain.
 - **Typing** searches as you go, by keyword and by meaning.
 - **Enter** asks: a short answer written only from your notes, every claim cited, with the matching notes beneath it. Client notes, inbox drafts and people stay out unless you tick them.
-- **Cmd+Enter** (or **Tell**) adds what you typed to the brain.
+- **Cmd+Enter** / **Ctrl+Enter** (or **Save thought**) adds what you typed to the brain.
 - **Dropping a file anywhere** on the page adds it. The paperclip does the same.
 
-**Menu** holds Activity, Settings and the older screens. A small counter appears at the top only while something is being worked on or needs a look.
+**Suggested searches** fill the search box without saving or asking automatically. **Clear search** returns to the landing page. Client notes, inbox drafts and people are excluded by default; their filters are always visible. **Save as client material** applies to new additions, separately from the search filters.
+
+**Add files**, **Explore the graph** and **View activity** are available directly on the landing page. **Menu** holds Activity, Settings and the other screens. A small counter appears at the top only while something is being worked on or needs a look.
 
 ## The queue
 
