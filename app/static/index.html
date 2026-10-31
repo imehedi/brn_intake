@@ -595,8 +595,6 @@ dialog pre { white-space: pre-wrap; font-family: var(--mh-font-mono); font-size:
 .card__title, .linkbtn, .result-btn, .meta.mono, .job__name { overflow-wrap: anywhere; }
 
 /* Ask */
-.ask-row { display: flex; gap: var(--mh-space-2); align-items: stretch; }
-.ask-input { flex: 1 1 auto; font-size: 1.05rem; min-height: var(--mh-size-control-lg); }
 .ask-split { display: grid; gap: var(--mh-space-5); grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; }
 @media (max-width: 960px) { .ask-split { grid-template-columns: minmax(0, 1fr); } }
 .answer-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.65; color: var(--mh-fg-default); }
@@ -648,7 +646,7 @@ mark { background: var(--mh-bg-accent-subtle); color: var(--mh-fg-default); bord
 .topbar .chip { border-color: var(--mh-border-default); color: var(--mh-fg-body); background: var(--mh-bg-surface); }
 .topbar .btn--inverse { color: var(--mh-fg-body); border-color: var(--mh-border-default); background: var(--mh-bg-surface); }
 .topbar .btn--inverse:hover { background: var(--mh-bg-subtle); }
-.chip[hidden], .intro, #tabBar { display: none; }
+.chip[hidden], #tabBar { display: none; }
 button.chip { cursor: pointer; font: inherit; font-size: 0.78rem; font-weight: 600; }
 button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-default); }
 .menu { position: absolute; right: var(--mh-gutter); top: calc(100% + var(--mh-space-1)); z-index: var(--mh-z-dropdown); min-width: 220px; display: flex; flex-direction: column; padding: var(--mh-space-1-5); background: var(--mh-bg-surface); border: 1px solid var(--mh-border-default); border-radius: var(--mh-radius-card); box-shadow: var(--mh-shadow-md); }
@@ -669,28 +667,58 @@ button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-de
 .home #askAnswer { border-color: var(--mh-border-default); }
 .back[hidden] { display: none; }
 .home { display: flex; flex-direction: column; gap: var(--mh-space-6); }
-.home__hero { width: 100%; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--mh-space-3); padding-top: clamp(2rem, 16vh, 10rem); }
-.home.has-query .home__hero { padding-top: 0; }
-.home__mark { margin: 0 0 var(--mh-space-3); text-align: center; font-size: clamp(1.7rem, 3.2vw, 2.3rem); font-weight: 600; letter-spacing: -0.015em; color: var(--mh-fg-default); }
-.home.has-query .home__mark { display: none; }
-.search { display: flex; align-items: flex-end; gap: var(--mh-space-2); padding: var(--mh-space-1-5) var(--mh-space-1-5) var(--mh-space-1-5) var(--mh-space-4); background: var(--mh-bg-surface); border: 1px solid var(--mh-border-control); border-radius: var(--mh-radius-dialog); box-shadow: var(--mh-shadow-sm); }
-.search:focus-within { outline: 2px solid var(--mh-focus-ring); outline-offset: 2px; box-shadow: var(--mh-shadow-md); }
-.search__icon { align-self: center; display: inline-flex; color: var(--mh-fg-meta); }
-.search__icon svg { width: 20px; height: 20px; }
-.search__input { flex: 1 1 auto; min-width: 0; border: 0; outline: none; resize: none; background: var(--mh-bg-surface); color: var(--mh-fg-default); font: inherit; font-size: 1.1rem; line-height: 1.5; padding: var(--mh-space-2) 0; min-height: 2.75rem; max-height: 45vh; overflow-y: auto; }
+.home__hero { width: 100%; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; padding-top: clamp(2rem, 8vh, 6rem); }
+.home__welcome { text-align: center; padding-bottom: 12px; }
+.home__eyebrow { display: inline-flex; align-items: center; gap: 8px; color: var(--mh-fg-accent); font-size: .78rem; font-weight: 500; letter-spacing: .04em; margin-bottom: 20px; }
+.home__eyebrow span { font-size: 1.3rem; }
+.home__mark { margin: 0; font-size: clamp(2.2rem, 5vw, 3.8rem); line-height: 1.12; font-weight: 500; letter-spacing: -.045em; color: var(--mh-fg-default); }
+.home__lede { margin: 20px auto 0; max-width: 48ch; color: var(--mh-fg-body); font-size: 1rem; line-height: 1.6; }
+.home.has-query .home__hero { padding-top: 12px; }
+.home.has-query .home__welcome, .home.has-query .home__discover { display: none; }
+.search { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 18px; background: var(--mh-bg-surface); border: 1px solid var(--mh-border-default); border-radius: 22px; box-shadow: var(--mh-shadow-md); }
+.search:focus-within { outline: 2px solid var(--mh-focus-ring); outline-offset: 3px; }
+.search__icon { display: inline-flex; color: var(--mh-fg-meta); }
+.search__icon svg { width: 22px; height: 22px; }
+.search__input { flex: 1 1 240px; min-width: 0; border: 0; outline: none; resize: none; background: transparent; color: var(--mh-fg-default); font: inherit; font-size: 1.1rem; line-height: 1.5; padding: 8px 0; min-height: 44px; max-height: 45vh; overflow-y: auto; }
 .search__input::placeholder { color: var(--mh-fg-muted); }
-.search__actions { display: flex; gap: var(--mh-space-1-5); align-items: center; flex: none; }
-.btn--icon { padding: 0; width: var(--mh-size-control-md); justify-content: center; }
+.search__actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; width: 100%; padding-top: 12px; border-top: 1px solid var(--mh-border-subtle); }
+.search__actions #attachBtn { margin-right: auto; }
+.search__actions .btn { min-height: 44px; }
+.btn--icon { padding: 0; width: 44px; justify-content: center; }
 .btn--icon svg { width: 18px; height: 18px; }
-.search__hint { margin: 0; text-align: center; font-size: 0.8rem; color: var(--mh-fg-meta); }
-.search__hint kbd { font-family: var(--mh-font-mono); font-size: 0.74rem; padding: 1px 6px; border: 1px solid var(--mh-border-default); border-radius: var(--mh-radius-tooltip); background: var(--mh-bg-surface); color: var(--mh-fg-body); }
-.search__filters { justify-content: center; }
-.home:not(.has-query) .search__filters { display: none; }
-.search__filters .check { font-weight: 500; font-size: 0.8rem; color: var(--mh-fg-body); }
-.home__results { width: 100%; max-width: 760px; margin: 0 auto; }
+.search__hint { margin: 0; text-align: center; font-size: .76rem; line-height: 1.8; color: var(--mh-fg-meta); }
+.search__hint kbd { font-family: var(--mh-font-mono); padding: 2px 5px; border: 1px solid var(--mh-border-default); border-radius: 5px; background: var(--mh-bg-surface); }
+.search__filters { justify-content: center; gap: 8px 16px; }
+.search__scope { color: var(--mh-fg-meta); font-size: .75rem; }
+.search__filters .check { font-weight: 400; font-size: .78rem; color: var(--mh-fg-body); min-height: 32px; }
+.search__filters .check:last-child { border-left: 1px solid var(--mh-border-default); padding-left: 16px; }
+.home__discover { padding-top: 16px; }
+.home__section-label { margin-bottom: 12px; font-size: .76rem; color: var(--mh-fg-meta); }
+.home__suggestions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.suggestion { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 20px; border: 1px solid var(--mh-border-default); border-radius: 14px; background: var(--mh-bg-surface); color: var(--mh-fg-default); text-align: left; font: inherit; font-size: .88rem; line-height: 1.5; cursor: pointer; transition: border-color 150ms, transform 150ms; }
+.suggestion:hover { border-color: var(--mh-border-strong); transform: translateY(-2px); }
+.suggestion span:first-child { color: var(--mh-fg-meta); font-size: .72rem; }
+.suggestion span:last-child { align-self: flex-end; color: var(--mh-fg-accent); margin-top: auto; }
+.home__shortcuts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 24px; padding-top: 24px; }
+.home__arrow { width: 16px; height: 16px; vertical-align: middle; }
+.home__link { appearance: none; border: 0; background: transparent; color: var(--mh-fg-link); font: inherit; font-size: .8rem; min-height: 44px; cursor: pointer; }
+.home__link:hover { text-decoration: underline; }
+.home__footnote { text-align: center; color: var(--mh-fg-meta); font-size: .75rem; margin-top: 12px; }
+.home__results { width: 100%; max-width: 860px; margin: 0 auto; }
 .home:not(.has-query) .home__results { display: none; }
 .home .ask-split { grid-template-columns: minmax(0, 1fr); }
 .home:not(.has-answer) #askAnswer { display: none; }
+@media (max-width: 600px) {
+  .home__hero { padding-top: 24px; gap: 16px; }
+  .home__mark { font-size: 2.3rem; }
+  .home__suggestions { grid-template-columns: 1fr; }
+  .suggestion { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 14px 16px; }
+  .suggestion span:first-child { grid-column: 1 / -1; }
+  .search { padding: 12px; }
+  .search__input { flex-basis: 150px; font-size: 1rem; }
+  .search__filters { justify-content: flex-start; }
+  .search__filters .check:last-child { border-left: 0; padding-left: 0; }
+}
 .veil { position: fixed; inset: 0; z-index: var(--mh-z-overlay); display: grid; place-items: center; padding: var(--mh-space-6); background: var(--mh-bg-canvas); opacity: 0.96; }
 .veil[hidden] { display: none; }
 .veil__box { display: flex; flex-direction: column; align-items: center; gap: var(--mh-space-2); padding: var(--mh-space-12) var(--mh-space-8); border: 2px dashed var(--mh-border-strong); border-radius: var(--mh-radius-dialog); color: var(--mh-fg-default); font-size: 1.15rem; font-weight: 600; }
@@ -735,12 +763,6 @@ button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-de
 </header>
 
 <main id="main" class="shell">
-  <section class="intro stack stack--tight">
-    <p class="eyebrow eyebrow--accent">Second brain</p>
-    <h1>Drop it in. The brain files it.</h1>
-    <p class="lede">Everything is read and filed on this Mac. Each drop is one commit you can undo.</p>
-  </section>
-
   <div class="tabs is-collapsed" role="tablist" aria-label="Views" id="tabBar">
     <button class="tab" role="tab" id="tabActivity" aria-controls="panelActivity" aria-selected="false" tabindex="-1" type="button">Activity</button>
     <button class="tab" role="tab" id="tabSettings" aria-controls="panelSettings" aria-selected="false" tabindex="-1" type="button">Settings</button>
@@ -808,24 +830,44 @@ button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-de
 
   <section id="panelAsk" role="tabpanel" aria-labelledby="tabAsk" class="home">
     <div class="home__hero">
-      <h1 class="home__mark">Your brain</h1>
+      <div class="home__welcome">
+        <p class="home__eyebrow"><span aria-hidden="true">✦</span> Your personal knowledge space</p>
+        <h1 class="home__mark">A little less searching.<br>A lot more connecting.</h1>
+        <p class="home__lede">Find a thought, ask a question, or save something worth remembering.</p>
+      </div>
       <form class="search" id="askForm" novalidate>
         <span class="search__icon" id="searchIcon"></span>
         <label class="visually-hidden" for="askInput">Search, ask or tell your brain</label>
-        <textarea class="search__input" id="askInput" rows="1" autocomplete="off" spellcheck="true" placeholder="Search or ask your brain"></textarea>
+        <textarea class="search__input" id="askInput" rows="1" autocomplete="off" spellcheck="true" placeholder="What’s on your mind?" aria-describedby="lede"></textarea>
+        <button class="btn btn--sm btn--ghost btn--icon" id="clearSearch" type="button" aria-label="Clear search" hidden>×</button>
         <div class="search__actions">
           <input class="visually-hidden" type="file" id="tellFiles" multiple>
           <button class="btn btn--sm btn--ghost btn--icon" id="attachBtn" type="button" aria-label="Add files" title="Add files"></button>
-          <button class="btn btn--sm btn--ghost" id="tellBtn" type="button" title="Add it to your brain (Command or Control and Enter)">Tell</button>
+          <button class="btn btn--sm btn--ghost" id="tellBtn" type="button" title="Add it to your brain (Command or Control and Enter)">Save thought</button>
           <button class="btn btn--sm btn--primary" id="askBtn" type="submit" title="Ask (Enter)">Ask</button>
         </div>
       </form>
-      <p class="search__hint" id="lede"><kbd>Enter</kbd> asks &middot; <kbd>&#8984; Enter</kbd> tells &middot; drop files anywhere</p>
-      <div class="cluster search__filters">
+      <p class="search__hint" id="lede">Search as you type · <kbd>Enter</kbd> to ask · <kbd id="saveShortcut">Ctrl + Enter</kbd> to save</p>
+      <div class="cluster search__filters" role="group" aria-label="Search scope and saved material sensitivity">
+        <span class="search__scope">Include in search</span>
         <label class="check"><input type="checkbox" id="askClient">Client notes</label>
         <label class="check"><input type="checkbox" id="askInbox">Inbox drafts</label>
         <label class="check"><input type="checkbox" id="askPeople">People</label>
-        <label class="check" title="When telling: treat what you add as client material"><input type="checkbox" id="tellClient">Telling client material</label>
+        <label class="check" title="When saving: treat what you add as client material"><input type="checkbox" id="tellClient">Save as client material</label>
+      </div>
+      <div class="home__discover">
+        <p class="home__section-label">Start with a question</p>
+        <div class="home__suggestions" aria-label="Suggested searches">
+          <button class="suggestion" type="button" data-query="What have I learnt recently?"><span>Reflect</span>What have I learnt recently?<span aria-hidden="true"><svg class="home__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></button>
+          <button class="suggestion" type="button" data-query="Which ideas connect across my notes?"><span>Connect</span>Which ideas connect across my notes?<span aria-hidden="true"><svg class="home__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></button>
+          <button class="suggestion" type="button" data-query="What questions are still open?"><span>Explore</span>What questions are still open?<span aria-hidden="true"><svg class="home__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></span></button>
+        </div>
+        <nav class="home__shortcuts" aria-label="Knowledge tools">
+          <button class="home__link" id="homeAddFiles" type="button">＋ Add files</button>
+          <button class="home__link" type="button" data-home-tab="tabGraph">Explore the graph <svg class="home__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button>
+          <button class="home__link" type="button" data-home-tab="tabActivity">View activity <svg class="home__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg></button>
+        </nav>
+        <p class="home__footnote">Drop files anywhere to add them to your brain.</p>
       </div>
       <div id="homeNotice" aria-live="polite"></div>
       <div id="tellAlert" aria-live="assertive"></div>
@@ -2340,15 +2382,27 @@ button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-de
     const el = $('askInput'); el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, window.innerHeight * 0.45) + 'px';
     const has = !!el.value.trim();
     $('panelAsk').classList.toggle('has-query', has);
+    $('clearSearch').hidden = !has;
     if (!has) { $('panelAsk').classList.remove('has-answer'); answered = null; }
     clearTimeout(typeTimer); typeTimer = setTimeout(liveSearch, 250);
   }
+  $('clearSearch').addEventListener('click', () => {
+    if (askAbort) { askAbort.abort(); askAbort = null; }
+    ++askSeq;
+    $('askInput').value = ''; onQuery(); $('askInput').focus();
+  });
+  document.querySelectorAll('[data-query]').forEach((button) => button.addEventListener('click', () => {
+    $('askInput').value = button.dataset.query; onQuery(); $('askInput').focus();
+  }));
+  document.querySelectorAll('[data-home-tab]').forEach((button) => button.addEventListener('click', () => selectTab($(button.dataset.homeTab))));
+  $('homeAddFiles').addEventListener('click', () => $('tellFiles').click());
+  $('saveShortcut').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ + Enter' : 'Ctrl + Enter';
   $('askInput').addEventListener('input', onQuery);
   $('askInput').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
     e.preventDefault();
     if (e.metaKey || e.ctrlKey) tellText();
-    else if ($('askInput').value.trim().length > 500) toast('info', 'That is long for a question. To add it to your brain, press Command and Enter, or Tell.');
+    else if ($('askInput').value.trim().length > 500) toast('info', 'That is long for a question. To add it to your brain, use Save thought or the save shortcut shown below the box.');
     else $('askForm').requestSubmit();
   });
   ['askClient', 'askInbox', 'askPeople'].forEach((id) => $(id).addEventListener('change', liveSearch));
@@ -2621,7 +2675,7 @@ button.chip:hover { border-color: var(--mh-border-strong); color: var(--mh-fg-de
     // Re-draw only when something changed, so typing a name or tapping a button is not interrupted by the poll.
     if (sig === feedSeen && force !== true) { quick.timer = setTimeout(loadFeed, list.some((d) => DROP_ACTIVE.has(d.state)) ? 2000 : 15000); return; }
     feedSeen = sig;
-    $('feed').replaceChildren(...(list.length ? list.map(dropItem) : [h('li', { class: 'meta', text: 'Nothing added yet. Use Tell, or drop a file anywhere on the page.' })]));
+    $('feed').replaceChildren(...(list.length ? list.map(dropItem) : [h('li', { class: 'meta', text: 'Nothing added yet. Use Save thought, or drop a file anywhere on the page.' })]));
     quick.timer = setTimeout(loadFeed, list.some((d) => DROP_ACTIVE.has(d.state)) ? 2000 : 15000);
   }
   loadFeed();
