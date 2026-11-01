@@ -2,8 +2,9 @@
 # Built with --require-hashes --only-binary=:all:, so a changed or substituted package fails the build.
 # To upgrade: change a version, fetch its wheel, replace the hash, and rebuild with: bin/brain-intake build
 
-certifi==2026.6.17 \
-    --hash=sha256:2227dcbaafe0d2f59279d1762ddddc37783ed4354594f194ffc31d20f41fc3db
+certifi==2026.10.18 \
+    --hash=sha256:73191c47aaa79da394e8fee2dbc2ec827432cab56311122c9e47abf79e390f62 \
+    --hash=sha256:b9995d97b64d0431a5af837d8ca8cd6238104d1f319f04bd93ea43124d6c861e
 charset-normalizer==3.4.7 \
     --hash=sha256:0ea948db76d31190bf08bd371623927ee1339d5f2a0b4b1b4a4439a65298703c
 et-xmlfile==2.0.0 \
