@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 # Throwaway vault clone and state for test runs
 .test/
+.idea
